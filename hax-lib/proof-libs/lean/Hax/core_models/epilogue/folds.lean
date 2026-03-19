@@ -46,12 +46,130 @@ attribute [spec] rust_primitives.hax.folds.fold_range_return
 open Lean in
 set_option hygiene false in
 macro "declare_fold_specs" s:(&"signed" <|> &"unsigned") typeName:ident width:term : command => do
+
+  let signed ← match s.raw[0].getKind with
+  | `signed => pure true
+  | `unsigned => pure false
+  | _ => throw .unsupportedSyntax
+
   let tyDot (n : Name) := mkIdent (typeName.getId ++ n)
   let tySimp (n : Name) : TSyntax _ := .mk
     (Syntax.node .none ``Lean.Parser.Tactic.simpLemma #[mkNullNode, mkNullNode, tyDot n])
   let tyRw (n : Name) : TSyntax `Lean.Parser.Tactic.rwRule := .mk
     (Syntax.node .none ``Lean.Parser.Tactic.rwRule #[mkNullNode, tyDot n])
-  `(
+
+  if signed then return ← `(
+    /-- Implementation of Rust for-loops without early returns -/
+    def $(tyDot `fold_range) {α : Type}
+        (s e : $typeName)
+        (inv : α -> $typeName -> RustM Prop)
+        (init: α)
+        (body : α -> $typeName -> RustM α)
+        (pureInv: {i : α -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄})
+        : RustM α := do
+        if s < e
+        then fold_range (s + 1) e inv (← body init s) body pureInv
+        else pure init
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+
+    /-- Implementation of Rust for-loops with early returns -/
+    def $(tyDot `fold_range_return) {α_acc α_ret : Type}
+        (s e: $typeName)
+        (inv : α_acc -> $typeName -> RustM Prop)
+        (init: α_acc)
+        (body : α_acc -> $typeName ->
+          RustM (ControlFlow (ControlFlow α_ret (Tuple2 Tuple0 α_acc)) α_acc ))
+        (pureInv: {i : α_acc -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄}) := do
+      if s < e
+      then
+        match (← body init s) with
+        -- Rust: `return`
+        | .Break (.Break res ) => pure (ControlFlow.Break res)
+        -- Rust: `break`
+        | .Break (.Continue ⟨ ⟨ ⟩, res⟩) => pure (ControlFlow.Continue res)
+        -- Rust: `continue`
+        | .Continue res => fold_range_return (s + 1) e inv res body pureInv
+      else
+        pure (ControlFlow.Continue init)
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+
+    @[spec]
+    instance : @rust_primitives.hax.folds $typeName where
+      fold_range := $(tyDot `fold_range)
+      fold_range_return := $(tyDot `fold_range_return)
+
+    /-- Specification of Rust for-loops without early returns (for bv_decide) -/
+    @[specset bv]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName) {α}
+      (s e : $typeName)
+      (inv : α -> $typeName -> RustM Prop)
+      (pureInv)
+      (init: α)
+      (body : α -> $typeName -> RustM α) :
+      s ≤ e →
+      pureInv.val init s →
+      (∀ (acc : α) (i : $typeName),
+        s ≤ i →
+        i < e →
+        pureInv.val acc i →
+        ⦃ ⌜ True ⌝ ⦄
+        (body acc i)
+        ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
+      ⦃ ⌜ True ⌝ ⦄
+      ($(tyDot `fold_range) s e inv init body pureInv)
+      ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄
+    := by
+      intro h_le h_inv_s h_body
+      unfold $(tyDot `fold_range)
+      mvcgen
+      · mstart
+        mspec h_body _ _ (le_refl s) (by assumption) h_inv_s
+        mspec $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+          <;> grind
+      · grind
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+
+    /-- Specification of Rust for-loops without early returns (for grind) -/
+    @[specset int]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_int_{typeName.getId}").toName) {α}
+        (s e : $typeName)
+        (inv : α -> $typeName -> RustM Prop)
+        (pureInv)
+        (init: α)
+        (body : α -> $typeName -> RustM α) :
+        s.toInt ≤ e.toInt →
+        pureInv.val init s →
+        (∀ (acc : α) (i : $typeName),
+          s.toInt ≤ i.toInt →
+          i.toInt < e.toInt →
+          pureInv.val acc i →
+          ⦃ ⌜ True ⌝ ⦄
+          (body acc i)
+          ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
+        ⦃ ⌜ True ⌝ ⦄
+        ($(tyDot `fold_range) s e inv init body pureInv)
+        ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄ := by
+      intro h_le h_inv_s h_body
+      apply $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+      · exact $(tyDot `le_iff_toInt_le).mpr h_le
+      · exact h_inv_s
+      · intro acc i hi_ge hi_lt h_inv
+        apply h_body
+        · exact $(tyDot `le_iff_toInt_le).mp hi_ge
+        · exact $(tyDot `lt_iff_toInt_lt).mp hi_lt
+        · exact h_inv
+
+  )
+  else return ← `(
     /-- Implementation of Rust for-loops without early returns -/
     def $(tyDot `fold_range) {α : Type}
         (s e : $typeName)
@@ -160,6 +278,12 @@ declare_fold_specs unsigned UInt16 16
 declare_fold_specs unsigned UInt32 32
 declare_fold_specs unsigned UInt64 64
 declare_fold_specs unsigned USize64 64
+
+declare_fold_specs signed Int8 8
+declare_fold_specs signed Int16 16
+declare_fold_specs signed Int32 32
+declare_fold_specs signed Int64 64
+declare_fold_specs signed ISize System.Platform.numBits
 
 
 end Fold
