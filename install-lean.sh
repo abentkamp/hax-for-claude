@@ -2,8 +2,7 @@
 
 set -eu
 
-SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-LEAN_TOOLCHAIN_FILE="$SCRIPTPATH/proof-libs/lean/lean-toolchain"
+LEAN_TOOLCHAIN_FILE="proof-libs/lean/lean-toolchain"
 
 # Install elan (Lean version manager) if not already installed
 if ! command -v elan >/dev/null 2>&1; then
