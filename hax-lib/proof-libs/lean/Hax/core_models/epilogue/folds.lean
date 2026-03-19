@@ -45,251 +45,251 @@ attribute [spec] rust_primitives.hax.folds.fold_range_return
 
 open Lean in
 set_option hygiene false in
-macro "declare_fold_specs" : command => do
+macro "declare_fold_specs" s:(&"signed" <|> &"unsigned") typeName:ident width:term : command => do
+
+  let signed ← match s.raw[0].getKind with
+  | `signed => pure true
+  | `unsigned => pure false
+  | _ => throw .unsupportedSyntax
+
+  let tyDot (n : Name) := mkIdent (typeName.getId ++ n)
+  let tySimp (n : Name) : TSyntax _ := .mk
+    (Syntax.node .none ``Lean.Parser.Tactic.simpLemma #[mkNullNode, mkNullNode, tyDot n])
+
   let mut cmds := #[]
-  -- Interleaved: each unsigned type is followed by its signed counterpart
-  let tys : List (Bool × String) := [
-    (false, "UInt8"),
-    (true,  "Int8"),
-    (false, "UInt16"),
-    (true,  "Int16"),
-    (false, "UInt32"),
-    (true,  "Int32"),
-    (false, "UInt64"),
-    (true,  "Int64"),
-    (false, "USize64"),
-  ]
-  for (signed, ty) in tys do
-    let typeName := mkIdent ty.toName
-    let tyDot (n : Name) := mkIdent (ty.toName ++ n)
-    let tySimp (n : Name) : TSyntax _ := .mk
-      (Syntax.node .none ``Lean.Parser.Tactic.simpLemma #[mkNullNode, mkNullNode, tyDot n])
-    let specBvThm := mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{ty}").toName
-    let specIntThm := mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_int_{ty}").toName
 
-    /- fold_range def: same body, termination differs -/
-    cmds := cmds.push $ ← if signed then `(
-      /-- Implementation of Rust for-loops without early returns -/
-      def $(tyDot `fold_range) {α : Type}
-          (s e : $typeName)
-          (inv : α -> $typeName -> RustM Prop)
-          (init: α)
-          (body : α -> $typeName -> RustM α)
-          (pureInv: {i : α -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄})
-          : RustM α := do
-          if s < e
-          then fold_range (s + 1) e inv (← body init s) body pureInv
-          else pure init
-      termination_by (e.toInt - s.toInt).toNat
-      decreasing_by
-        have : (s + 1).toInt = s.toInt + 1 := by grind
-        grind
-    ) else `(
-      /-- Implementation of Rust for-loops without early returns -/
-      def $(tyDot `fold_range) {α : Type}
-          (s e : $typeName)
-          (inv : α -> $typeName -> RustM Prop)
-          (init: α)
-          (body : α -> $typeName -> RustM α)
-          (pureInv: {i : α -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄})
-          : RustM α := do
-          if s < e
-          then fold_range (s + 1) e inv (← body init s) body pureInv
-          else pure init
-      termination_by (e - s)
-      decreasing_by
-        simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
-        exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
-    )
-
-    /- fold_range_return def: same body, termination differs -/
-    cmds := cmds.push $ ← if signed then `(
-      /-- Implementation of Rust for-loops with early returns -/
-      def $(tyDot `fold_range_return) {α_acc α_ret : Type}
-          (s e: $typeName)
-          (inv : α_acc -> $typeName -> RustM Prop)
-          (init: α_acc)
-          (body : α_acc -> $typeName ->
-            RustM (ControlFlow (ControlFlow α_ret (Tuple2 Tuple0 α_acc)) α_acc ))
-          (pureInv: {i : α_acc -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄}) := do
+  /- fold_range def: same body, termination differs -/
+  cmds := cmds.push $ ← if signed then `(
+    /-- Implementation of Rust for-loops without early returns -/
+    def $(tyDot `fold_range) {α : Type}
+        (s e : $typeName)
+        (inv : α -> $typeName -> RustM Prop)
+        (init: α)
+        (body : α -> $typeName -> RustM α)
+        (pureInv: {i : α -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄})
+        : RustM α := do
         if s < e
-        then
-          match (← body init s) with
-          -- Rust: `return`
-          | .Break (.Break res ) => pure (ControlFlow.Break res)
-          -- Rust: `break`
-          | .Break (.Continue ⟨ ⟨ ⟩, res⟩) => pure (ControlFlow.Continue res)
-          -- Rust: `continue`
-          | .Continue res => fold_range_return (s + 1) e inv res body pureInv
-        else
-          pure (ControlFlow.Continue init)
-      termination_by (e.toInt - s.toInt).toNat
-      decreasing_by
-        have : (s + 1).toInt = s.toInt + 1 := by grind
-        grind
-    ) else `(
-      /-- Implementation of Rust for-loops with early returns -/
-      def $(tyDot `fold_range_return) {α_acc α_ret : Type}
-          (s e: $typeName)
-          (inv : α_acc -> $typeName -> RustM Prop)
-          (init: α_acc)
-          (body : α_acc -> $typeName ->
-            RustM (ControlFlow (ControlFlow α_ret (Tuple2 Tuple0 α_acc)) α_acc ))
-          (pureInv: {i : α_acc -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄}) := do
+        then fold_range (s + 1) e inv (← body init s) body pureInv
+        else pure init
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+  ) else `(
+    /-- Implementation of Rust for-loops without early returns -/
+    def $(tyDot `fold_range) {α : Type}
+        (s e : $typeName)
+        (inv : α -> $typeName -> RustM Prop)
+        (init: α)
+        (body : α -> $typeName -> RustM α)
+        (pureInv: {i : α -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄})
+        : RustM α := do
         if s < e
-        then
-          match (← body init s) with
-          -- Rust: `return`
-          | .Break (.Break res ) => pure (ControlFlow.Break res)
-          -- Rust: `break`
-          | .Break (.Continue ⟨ ⟨ ⟩, res⟩) => pure (ControlFlow.Continue res)
-          -- Rust: `continue`
-          | .Continue res => fold_range_return (s + 1) e inv res body pureInv
-        else
-          pure (ControlFlow.Continue init)
-      termination_by (e - s)
-      decreasing_by
-        simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
-        exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
-    )
+        then fold_range (s + 1) e inv (← body init s) body pureInv
+        else pure init
+    termination_by (e - s)
+    decreasing_by
+      simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
+      exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
+  )
 
-    /- instance: identical for signed and unsigned -/
-    cmds := cmds.push $ ← `(
-      @[spec]
-      instance : @rust_primitives.hax.folds $typeName where
-        fold_range := $(tyDot `fold_range)
-        fold_range_return := $(tyDot `fold_range_return)
-    )
+  /- fold_range_return def: same body, termination differs -/
+  cmds := cmds.push $ ← if signed then `(
+    /-- Implementation of Rust for-loops with early returns -/
+    def $(tyDot `fold_range_return) {α_acc α_ret : Type}
+        (s e: $typeName)
+        (inv : α_acc -> $typeName -> RustM Prop)
+        (init: α_acc)
+        (body : α_acc -> $typeName ->
+          RustM (ControlFlow (ControlFlow α_ret (Tuple2 Tuple0 α_acc)) α_acc ))
+        (pureInv: {i : α_acc -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄}) := do
+      if s < e
+      then
+        match (← body init s) with
+        -- Rust: `return`
+        | .Break (.Break res ) => pure (ControlFlow.Break res)
+        -- Rust: `break`
+        | .Break (.Continue ⟨ ⟨ ⟩, res⟩) => pure (ControlFlow.Continue res)
+        -- Rust: `continue`
+        | .Continue res => fold_range_return (s + 1) e inv res body pureInv
+      else
+        pure (ControlFlow.Continue init)
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+  ) else `(
+    /-- Implementation of Rust for-loops with early returns -/
+    def $(tyDot `fold_range_return) {α_acc α_ret : Type}
+        (s e: $typeName)
+        (inv : α_acc -> $typeName -> RustM Prop)
+        (init: α_acc)
+        (body : α_acc -> $typeName ->
+          RustM (ControlFlow (ControlFlow α_ret (Tuple2 Tuple0 α_acc)) α_acc ))
+        (pureInv: {i : α_acc -> $typeName -> Prop // ∀ a b, ⦃⌜ True ⌝⦄ inv a b ⦃⇓ r => ⌜ r = (i a b) ⌝⦄}) := do
+      if s < e
+      then
+        match (← body init s) with
+        -- Rust: `return`
+        | .Break (.Break res ) => pure (ControlFlow.Break res)
+        -- Rust: `break`
+        | .Break (.Continue ⟨ ⟨ ⟩, res⟩) => pure (ControlFlow.Continue res)
+        -- Rust: `continue`
+        | .Continue res => fold_range_return (s + 1) e inv res body pureInv
+      else
+        pure (ControlFlow.Continue init)
+    termination_by (e - s)
+    decreasing_by
+      simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
+      exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
+  )
 
-    /- fold_range_spec_bv theorem: same statement and proof, termination differs -/
-    cmds := cmds.push $ ← if signed then `(
-      /-- Specification of Rust for-loops without early returns (for bv_decide) -/
-      @[specset bv]
-      theorem $specBvThm {α}
+  /- instance: identical for signed and unsigned -/
+  cmds := cmds.push $ ← `(
+    @[spec]
+    instance : @rust_primitives.hax.folds $typeName where
+      fold_range := $(tyDot `fold_range)
+      fold_range_return := $(tyDot `fold_range_return)
+  )
+
+  /- fold_range_spec_bv theorem: same statement and proof, termination differs -/
+  cmds := cmds.push $ ← if signed then `(
+    /-- Specification of Rust for-loops without early returns (for bv_decide) -/
+    @[specset bv]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName) {α}
+      (s e : $typeName)
+      (inv : α -> $typeName -> RustM Prop)
+      (pureInv)
+      (init: α)
+      (body : α -> $typeName -> RustM α) :
+      s ≤ e →
+      pureInv.val init s →
+      (∀ (acc : α) (i : $typeName),
+        s ≤ i →
+        i < e →
+        pureInv.val acc i →
+        ⦃ ⌜ True ⌝ ⦄
+        (body acc i)
+        ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
+      ⦃ ⌜ True ⌝ ⦄
+      ($(tyDot `fold_range) s e inv init body pureInv)
+      ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄
+    := by
+      intro h_le h_inv_s h_body
+      unfold $(tyDot `fold_range)
+      mvcgen
+      · mstart
+        mspec h_body _ _ ($(tyDot `le_refl) s) (by assumption) h_inv_s
+        mspec $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+          <;> grind
+      · grind
+    termination_by (e.toInt - s.toInt).toNat
+    decreasing_by
+      have : (s + 1).toInt = s.toInt + 1 := by grind
+      grind
+  ) else `(
+    /-- Specification of Rust for-loops without early returns (for bv_decide) -/
+    @[specset bv]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName) {α}
+      (s e : $typeName)
+      (inv : α -> $typeName -> RustM Prop)
+      (pureInv)
+      (init: α)
+      (body : α -> $typeName -> RustM α) :
+      s ≤ e →
+      pureInv.val init s →
+      (∀ (acc : α) (i : $typeName),
+        s ≤ i →
+        i < e →
+        pureInv.val acc i →
+        ⦃ ⌜ True ⌝ ⦄
+        (body acc i)
+        ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
+      ⦃ ⌜ True ⌝ ⦄
+      ($(tyDot `fold_range) s e inv init body pureInv)
+      ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄
+    := by
+      intro h_le h_inv_s h_body
+      unfold $(tyDot `fold_range)
+      mvcgen
+      · mstart
+        mspec h_body _ _ ($(tyDot `le_refl) s) (by assumption) h_inv_s
+        mspec $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+          <;> grind
+      · grind
+    termination_by (e - s)
+    decreasing_by
+      simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
+      exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
+  )
+
+  /- fold_range_spec_int theorem: statement and proof differ between signed and unsigned -/
+  cmds := cmds.push $ ← if signed then `(
+    /-- Specification of Rust for-loops without early returns (for grind) -/
+    @[specset int]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_int_{typeName.getId}").toName) {α}
         (s e : $typeName)
         (inv : α -> $typeName -> RustM Prop)
         (pureInv)
         (init: α)
         (body : α -> $typeName -> RustM α) :
-        s ≤ e →
+        s.toInt ≤ e.toInt →
         pureInv.val init s →
         (∀ (acc : α) (i : $typeName),
-          s ≤ i →
-          i < e →
+          s.toInt ≤ i.toInt →
+          i.toInt < e.toInt →
           pureInv.val acc i →
           ⦃ ⌜ True ⌝ ⦄
           (body acc i)
           ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
         ⦃ ⌜ True ⌝ ⦄
         ($(tyDot `fold_range) s e inv init body pureInv)
-        ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄
-      := by
-        intro h_le h_inv_s h_body
-        unfold $(tyDot `fold_range)
-        mvcgen
-        · mstart
-          mspec h_body _ _ ($(tyDot `le_refl) s) (by assumption) h_inv_s
-          mspec $specBvThm
-            <;> grind
-        · grind
-      termination_by (e.toInt - s.toInt).toNat
-      decreasing_by
-        have : (s + 1).toInt = s.toInt + 1 := by grind
-        grind
-    ) else `(
-      /-- Specification of Rust for-loops without early returns (for bv_decide) -/
-      @[specset bv]
-      theorem $specBvThm {α}
+        ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄ := by
+      intro h_le h_inv_s h_body
+      apply $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+      · exact $(tyDot `le_iff_toInt_le).mpr h_le
+      · exact h_inv_s
+      · intro acc i hi_ge hi_lt h_inv
+        apply h_body
+        · exact $(tyDot `le_iff_toInt_le).mp hi_ge
+        · exact $(tyDot `lt_iff_toInt_lt).mp hi_lt
+        · exact h_inv
+  ) else `(
+    /-- Specification of Rust for-loops without early returns (for grind) -/
+    @[specset int]
+    theorem $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_int_{typeName.getId}").toName) {α}
         (s e : $typeName)
         (inv : α -> $typeName -> RustM Prop)
         (pureInv)
         (init: α)
         (body : α -> $typeName -> RustM α) :
-        s ≤ e →
+        s.toNat ≤ e.toNat →
         pureInv.val init s →
         (∀ (acc : α) (i : $typeName),
-          s ≤ i →
-          i < e →
+          s.toNat ≤ i.toNat →
+          i.toNat < e.toNat →
           pureInv.val acc i →
           ⦃ ⌜ True ⌝ ⦄
           (body acc i)
           ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
         ⦃ ⌜ True ⌝ ⦄
         ($(tyDot `fold_range) s e inv init body pureInv)
-        ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄
-      := by
-        intro h_le h_inv_s h_body
-        unfold $(tyDot `fold_range)
-        mvcgen
-        · mstart
-          mspec h_body _ _ ($(tyDot `le_refl) s) (by assumption) h_inv_s
-          mspec $specBvThm
-            <;> grind
-        · grind
-      termination_by (e - s)
-      decreasing_by
-        simp only [$(tySimp `sizeOf), Nat.add_lt_add_iff_right]
-        exact $(tyDot `sub_succ_lt_self) _ _ (by assumption)
-    )
-
-    /- fold_range_spec_int theorem: statement and proof differ between signed and unsigned -/
-    cmds := cmds.push $ ← if signed then `(
-      /-- Specification of Rust for-loops without early returns (for grind) -/
-      @[specset int]
-      theorem $specIntThm {α}
-          (s e : $typeName)
-          (inv : α -> $typeName -> RustM Prop)
-          (pureInv)
-          (init: α)
-          (body : α -> $typeName -> RustM α) :
-          s.toInt ≤ e.toInt →
-          pureInv.val init s →
-          (∀ (acc : α) (i : $typeName),
-            s.toInt ≤ i.toInt →
-            i.toInt < e.toInt →
-            pureInv.val acc i →
-            ⦃ ⌜ True ⌝ ⦄
-            (body acc i)
-            ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
-          ⦃ ⌜ True ⌝ ⦄
-          ($(tyDot `fold_range) s e inv init body pureInv)
-          ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄ := by
-        intro h_le h_inv_s h_body
-        apply $specBvThm
-        · exact $(tyDot `le_iff_toInt_le).mpr h_le
-        · exact h_inv_s
-        · intro acc i hi_ge hi_lt h_inv
-          apply h_body
-          · exact $(tyDot `le_iff_toInt_le).mp hi_ge
-          · exact $(tyDot `lt_iff_toInt_lt).mp hi_lt
-          · exact h_inv
-    ) else `(
-      /-- Specification of Rust for-loops without early returns (for grind) -/
-      @[specset int]
-      theorem $specIntThm {α}
-          (s e : $typeName)
-          (inv : α -> $typeName -> RustM Prop)
-          (pureInv)
-          (init: α)
-          (body : α -> $typeName -> RustM α) :
-          s.toNat ≤ e.toNat →
-          pureInv.val init s →
-          (∀ (acc : α) (i : $typeName),
-            s.toNat ≤ i.toNat →
-            i.toNat < e.toNat →
-            pureInv.val acc i →
-            ⦃ ⌜ True ⌝ ⦄
-            (body acc i)
-            ⦃ ⇓ res => ⌜ pureInv.val res (i+1) ⌝ ⦄) →
-          ⦃ ⌜ True ⌝ ⦄
-          ($(tyDot `fold_range) s e inv init body pureInv)
-          ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄ := by
-        apply $specBvThm
-    )
+        ⦃ ⇓ r => ⌜ pureInv.val r e ⌝ ⦄ := by
+      apply $(mkIdent (s!"rust_primitives.hax.folds.fold_range_spec_bv_{typeName.getId}").toName)
+  )
 
   return ⟨mkNullNode cmds⟩
 
-declare_fold_specs
+declare_fold_specs unsigned UInt8 8
+declare_fold_specs unsigned UInt16 16
+declare_fold_specs unsigned UInt32 32
+declare_fold_specs unsigned UInt64 64
+declare_fold_specs unsigned USize64 64
+
+declare_fold_specs signed Int8 8
+declare_fold_specs signed Int16 16
+declare_fold_specs signed Int32 32
+declare_fold_specs signed Int64 64
 
 
 end Fold
