@@ -1003,6 +1003,21 @@ const _: () = {
                                 .nest(INDENT)
                                 .parens()
                         }
+                        (
+                            [lhs, rhs],
+                            _,
+                            ExprKind::GlobalId(op @ (binops::PartialEq::eq | binops::PartialEq::ne)),
+                        ) => {
+                            let symbol = match *op {
+                                binops::PartialEq::eq => "==",
+                                binops::PartialEq::ne => "!=",
+                                _ => unreachable!(),
+                            };
+                            docs![lhs, line!(), docs![symbol, softline!(), rhs].group()]
+                                .group()
+                                .nest(INDENT)
+                                .parens()
+                        }
                         _ => {
                             // Fallback for any application
                             docs![

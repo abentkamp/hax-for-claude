@@ -88,6 +88,14 @@ impl std::ops::Add for S {
     }
 }
 
+impl PartialEq for S {
+    fn eq(&self, other: &Self) -> bool {
+        true
+    }
+}
+
 fn not_s(x: S) -> S { !x }
 
 fn add_s(x: S, y: S) -> S { x + y }
+
+fn eq_s(x: S, y: S) -> bool { x == y }

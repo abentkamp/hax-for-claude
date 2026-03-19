@@ -227,12 +227,22 @@ instance Impl : core_models.ops.bit.Not S where
 instance Impl_1 : core_models.ops.arith.Add S S where
   add := fun (self : S) (rhs : S) => do (pure self)
 
+@[reducible] instance Impl_2.AssociatedTypes :
+  core_models.cmp.PartialEq.AssociatedTypes S S
+  where
+
+instance Impl_2 : core_models.cmp.PartialEq S S where
+  eq := fun (self : S) (other : S) => do (pure true)
+
 @[spec]
 def not_s (x : S) : RustM S := do (core_models.ops.bit.Not.not S x)
 
 @[spec]
 def add_s (x : S) (y : S) : RustM S := do
   (core_models.ops.arith.Add.add S S x y)
+
+@[spec]
+def eq_s (x : S) (y : S) : RustM Bool := do (x == y)
 
 end lean_tests.binops
 
