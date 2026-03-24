@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "lean-lsp-mcp": {
+      "command": "lean-lsp-mcp",
+      "args": [
+        "--transport", "stdio",
+        "--lean-project-path", "./hax-lib/proof-libs/lean"
+      ]
+    }
+  }
+}
