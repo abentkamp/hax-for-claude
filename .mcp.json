@@ -5,7 +5,10 @@
       "args": [
         "--transport", "stdio",
         "--lean-project-path", "./hax-lib/proof-libs/lean"
-      ]
+      ],
+      "env": {
+        "PATH": "${HOME}/.elan/bin:${PATH}"
+      }
     }
   }
 }
