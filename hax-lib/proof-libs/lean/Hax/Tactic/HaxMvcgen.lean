@@ -35,8 +35,10 @@ def findTripleHyp (goal : MVarId) : MetaM (Option FVarId) := do
 Returns the new goals (with the `h` subgoal closed). -/
 def applyTripleOfHypothesis (goal : MVarId) (tripleHyp : FVarId) :
     TacticM (Array MVarId) := do
-  -- Apply Triple.of_hypothesis, which produces subgoals for `h` and `hp`
+  -- Apply Triple.of_hypothesis, which produces subgoals for `h` and `hp`.
+  -- Use nonDependentOnly to avoid generating goals for implicit args (α, f, Q).
   let newGoals ← goal.apply (mkConst `Triple.of_hypothesis)
+    (cfg := { newGoals := .nonDependentOnly })
   -- Find and close the `h` subgoal (the one matching our hypothesis)
   let mut remainingGoals := #[]
   for g in newGoals do
@@ -97,13 +99,7 @@ gathered from `@[specset X]` annotations, where `X` is the current setting of
 Additionally, after each `mvcgen` run, it scans remaining goals for Triple hypotheses
 (from spec lemmas with Triples in pre/postconditions) and applies `Triple.of_hypothesis`
 to convert them into new Triple goals, which are then processed by another `mvcgen` run.
-This loop continues until no more Triple hypotheses or Triple goals are found.
-
-**Known limitation**: The `Triple.of_hypothesis` lemma must not be visible to `mvcgen`'s
-spec resolution, as `mvcgen` will pick it up as a spec and loop infinitely. The hypothesis
-handling is currently disabled pending a fix (either constructing the proof term
-programmatically or hiding the lemma from `mvcgen`). The Triple-as-goal case (from
-preconditions containing Triples) works correctly. -/
+This loop continues until no more Triple hypotheses or Triple goals are found. -/
 @[tactic hax_mvcgen]
 def elabHaxMvcgen : Tactic := fun stx => do
   let specset := hax_mvcgen.specset.get (← getOptions)
