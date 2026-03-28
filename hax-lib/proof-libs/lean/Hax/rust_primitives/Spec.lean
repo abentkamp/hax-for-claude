@@ -9,6 +9,11 @@ open Std.Do
 
 -/
 
+theorem Triple.of_hypothesis {α : Type} {f : RustM α} {Q : α → Assertion _} {p : Prop}
+    (h : ⦃ ⌜ True ⌝ ⦄ f ⦃ ⇓ r => Q r ⦄)
+    (hp : ⦃ ⌜ True ⌝ ⦄ f ⦃ ⇓? r => Q r → ⌜ p ⌝ ⦄) :
+    p := sorry
+
 structure Spec {α}
     (requires : RustM Prop)
     (ensures : α → RustM Prop)
