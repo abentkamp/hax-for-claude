@@ -112,7 +112,7 @@ instance instWPMonad : WPMonad RustM (.except Error .pure) where
   wp_pure := by intros; ext Q; rfl
   wp_bind x f := by ext Q; cases x <;> rfl
 
-def holds (x: RustM Prop) : Prop := ⦃ ⌜ True ⌝ ⦄ x ⦃ ⇓ p => ⌜ p ⌝ ⦄
+abbrev holds (x: RustM Prop) : Prop := ⦃ ⌜ True ⌝ ⦄ x ⦃ ⇓ p => ⌜ p ⌝ ⦄
 
 section Order
 
