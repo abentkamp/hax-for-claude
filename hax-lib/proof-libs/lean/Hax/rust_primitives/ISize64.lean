@@ -453,3 +453,193 @@ theorem ISize64.ofNat_int32ToNatClampNeg (x : Int32) (hx : 0 ≤ x) : ISize64.of
   Int32.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by cases System.Platform.numBits_eq <;> simp_all))
 
 @[simp, int_toBitVec] theorem ISize64.toBitVec_ofBitVec' (b) : (ISize64.ofBitVec b).toBitVec = b := (rfl)
+
+/-!
+## More lemmas from `Init.Data.SInt.Lemmas` (lines 1000–1840)
+-/
+
+theorem ISize64.toBitVec_ofIntTruncate {n : Int} (h₁ : ISize64.minValue.toInt ≤ n) (h₂ : n ≤ ISize64.maxValue.toInt) :
+    (ISize64.ofIntTruncate n).toBitVec = BitVec.ofInt _ n := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := h₂), toBitVec_ofIntLE]
+
+@[simp] theorem ISize64.toInt_ofBitVec (b) : (ISize64.ofBitVec b).toInt = b.toInt := (rfl)
+
+@[simp] theorem ISize64.toNatClampNeg_ofIntLE {n : Int} (h₁ h₂) :
+    (ISize64.ofIntLE n h₁ h₂).toNatClampNeg = n.toNat := by
+  rw [ofIntLE, toNatClampNeg, toInt_ofInt_of_le h₁ (Int.lt_of_le_sub_one h₂)]
+
+@[simp] theorem ISize64.toNatClampNeg_ofBitVec (b) :
+    (ISize64.ofBitVec b).toNatClampNeg = b.toInt.toNat := (rfl)
+
+theorem ISize64.toNatClampNeg_ofInt_of_le {n : Int} (h₁ : -2 ^ 63 ≤ n) (h₂ : n < 2 ^ 63) :
+    (ISize64.ofInt n).toNatClampNeg = n.toNat := by rw [toNatClampNeg, toInt_ofInt_of_le h₁ h₂]
+
+theorem ISize64.toNatClampNeg_ofIntTruncate_of_lt {n : Int} (h₁ : n < 2 ^ 63) :
+    (ISize64.ofIntTruncate n).toNatClampNeg = n.toNat := by
+  rw [ofIntTruncate]
+  split
+  · rw [dif_pos (by rw [toInt_maxValue]; omega), toNatClampNeg_ofIntLE]
+  next h =>
+    rw [toNatClampNeg_minValue, eq_comm, Int.toNat_eq_zero]
+    rw [toInt_minValue] at h
+    omega
+
+@[simp] theorem ISize64.toUInt64_ofBitVec (b) :
+    (ISize64.ofBitVec b).toUInt64 = UInt64.ofBitVec b := (rfl)
+
+theorem ISize64.toInt8_ofIntLE {n} (h₁ h₂) :
+    (ISize64.ofIntLE n h₁ h₂).toInt8 = Int8.ofInt n := Int8.toInt.inj (by simp)
+@[simp] theorem ISize64.toInt8_ofBitVec (b) :
+    (ISize64.ofBitVec b).toInt8 = Int8.ofBitVec (b.signExtend _) := (rfl)
+@[simp] theorem ISize64.toInt8_ofNat' {n} : (ISize64.ofNat n).toInt8 = Int8.ofNat n :=
+  Int8.toBitVec.inj (by simp [BitVec.signExtend_eq_setWidth_of_le])
+@[simp] theorem ISize64.toInt8_ofInt {n} : (ISize64.ofInt n).toInt8 = Int8.ofInt n :=
+  Int8.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt8_ofNat {n} : toInt8 (no_index (OfNat.ofNat n)) = OfNat.ofNat n := toInt8_ofNat'
+theorem ISize64.toInt8_ofIntTruncate {n : Int} (h₁ : -2 ^ 63 ≤ n) (h₂ : n < 2 ^ 63) :
+    (ISize64.ofIntTruncate n).toInt8 = Int8.ofInt n := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := Int.le_of_lt_add_one h₂), toInt8_ofIntLE]
+
+theorem ISize64.toInt16_ofIntLE {n} (h₁ h₂) :
+    (ISize64.ofIntLE n h₁ h₂).toInt16 = Int16.ofInt n := Int16.toInt.inj (by simp)
+@[simp] theorem ISize64.toInt16_ofBitVec (b) :
+    (ISize64.ofBitVec b).toInt16 = Int16.ofBitVec (b.signExtend _) := (rfl)
+@[simp] theorem ISize64.toInt16_ofNat' {n} : (ISize64.ofNat n).toInt16 = Int16.ofNat n :=
+  Int16.toBitVec.inj (by simp [BitVec.signExtend_eq_setWidth_of_le])
+@[simp] theorem ISize64.toInt16_ofInt {n} : (ISize64.ofInt n).toInt16 = Int16.ofInt n :=
+  Int16.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt16_ofNat {n} : toInt16 (no_index (OfNat.ofNat n)) = OfNat.ofNat n := toInt16_ofNat'
+theorem ISize64.toInt16_ofIntTruncate {n : Int} (h₁ : -2 ^ 63 ≤ n) (h₂ : n < 2 ^ 63) :
+    (ISize64.ofIntTruncate n).toInt16 = Int16.ofInt n := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := Int.le_of_lt_add_one h₂), toInt16_ofIntLE]
+
+theorem ISize64.toInt32_ofIntLE {n} (h₁ h₂) :
+    (ISize64.ofIntLE n h₁ h₂).toInt32 = Int32.ofInt n := Int32.toInt.inj (by simp)
+@[simp] theorem ISize64.toInt32_ofBitVec (b) :
+    (ISize64.ofBitVec b).toInt32 = Int32.ofBitVec (b.signExtend _) := (rfl)
+@[simp] theorem ISize64.toInt32_ofNat' {n} : (ISize64.ofNat n).toInt32 = Int32.ofNat n :=
+  Int32.toBitVec.inj (by simp [BitVec.signExtend_eq_setWidth_of_le])
+@[simp] theorem ISize64.toInt32_ofInt {n} : (ISize64.ofInt n).toInt32 = Int32.ofInt n :=
+  Int32.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt32_ofNat {n} : toInt32 (no_index (OfNat.ofNat n)) = OfNat.ofNat n := toInt32_ofNat'
+theorem ISize64.toInt32_ofIntTruncate {n : Int} (h₁ : -2 ^ 63 ≤ n) (h₂ : n < 2 ^ 63) :
+    (ISize64.ofIntTruncate n).toInt32 = Int32.ofInt n := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := Int.le_of_lt_add_one h₂), toInt32_ofIntLE]
+
+@[simp] theorem ISize64.toISize_ofBitVec (b) :
+    (ISize64.ofBitVec b).toISize = ISize.ofBitVec (b.signExtend _) := (rfl)
+@[simp] theorem ISize64.toISize_ofInt {n} : (ISize64.ofInt n).toISize = ISize.ofInt n := by
+  apply ISize.toInt.inj
+  simp only [toInt_toISize, toInt_ofInt, ISize.toInt_ofInt, ISize64.size]
+  apply Int.bmod_bmod_of_dvd
+  cases System.Platform.numBits_eq <;> simp_all <;> decide
+theorem ISize64.toISize_ofIntLE {n} (h₁ h₂) :
+    (ISize64.ofIntLE n h₁ h₂).toISize = ISize.ofInt n := by
+  rw [ofIntLE, toISize_ofInt]
+@[simp] theorem ISize64.toISize_ofNat' {n} : (ISize64.ofNat n).toISize = ISize.ofNat n := by
+  rw [← ofInt_eq_ofNat, toISize_ofInt, ISize.ofInt_eq_ofNat]
+@[simp] theorem ISize64.toISize_ofNat {n} : toISize (no_index (OfNat.ofNat n)) = OfNat.ofNat n := toISize_ofNat'
+theorem ISize64.toISize_ofIntTruncate {n : Int} (h₁ : -2 ^ 63 ≤ n) (h₂ : n < 2 ^ 63) :
+    (ISize64.ofIntTruncate n).toISize = ISize.ofInt n := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := Int.le_of_lt_add_one h₂), toISize_ofIntLE]
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_minValue : minValue.toBitVec = BitVec.intMin _ := (rfl)
+@[simp, int_toBitVec] theorem ISize64.toBitVec_maxValue : maxValue.toBitVec = BitVec.intMax _ := (rfl)
+
+@[simp] theorem ISize64.toInt8_neg (x : ISize64) : (-x).toInt8 = -x.toInt8 :=
+  Int8.toBitVec.inj (by simp)
+@[simp] theorem ISize64.toInt16_neg (x : ISize64) : (-x).toInt16 = -x.toInt16 :=
+  Int16.toBitVec.inj (by simp)
+@[simp] theorem ISize64.toInt32_neg (x : ISize64) : (-x).toInt32 = -x.toInt32 :=
+  Int32.toBitVec.inj (by simp)
+@[simp] theorem ISize64.toISize_neg (x : ISize64) : (-x).toISize = -x.toISize :=
+  ISize.toBitVec.inj (by simp)
+
+@[simp] theorem ISize64.ofIntLE_bitVecToInt (n : BitVec 64) :
+    ISize64.ofIntLE n.toInt (by exact n.le_toInt) (by exact n.toInt_le) = ISize64.ofBitVec n :=
+  ISize64.toBitVec.inj (by simp)
+theorem ISize64.ofBitVec_ofNatLT (n : Nat) (hn) :
+    ISize64.ofBitVec (BitVec.ofNatLT n hn) = ISize64.ofNat n :=
+  ISize64.toBitVec.inj (by simp [BitVec.ofNatLT_eq_ofNat])
+@[simp] theorem ISize64.ofBitVec_ofNat (n : Nat) :
+    ISize64.ofBitVec (BitVec.ofNat 64 n) = ISize64.ofNat n := (rfl)
+@[simp] theorem ISize64.ofBitVec_ofInt (n : Int) :
+    ISize64.ofBitVec (BitVec.ofInt 64 n) = ISize64.ofInt n := (rfl)
+@[simp] theorem ISize64.ofNat_bitVecToNat (n : BitVec 64) :
+    ISize64.ofNat n.toNat = ISize64.ofBitVec n :=
+  ISize64.toBitVec.inj (by simp)
+@[simp] theorem ISize64.ofInt_bitVecToInt (n : BitVec 64) :
+    ISize64.ofInt n.toInt = ISize64.ofBitVec n :=
+  ISize64.toBitVec.inj (by simp)
+@[simp] theorem ISize64.ofIntTruncate_bitVecToInt (n : BitVec 64) :
+    ISize64.ofIntTruncate n.toInt = ISize64.ofBitVec n :=
+  toInt.inj (toInt_ofIntTruncate (by exact n.le_toInt) (by exact n.toInt_le))
+
+@[simp] theorem ISize64.toInt_neg (n : ISize64) :
+    (-n).toInt = (-n.toInt).bmod (2 ^ 64) := BitVec.toInt_neg
+
+@[simp] theorem ISize64.toNatClampNeg_eq_zero_iff {n : ISize64} :
+    n.toNatClampNeg = 0 ↔ n ≤ 0 := by
+  rw [toNatClampNeg, Int.toNat_eq_zero, le_iff_toInt_le]
+  show n.toInt ≤ 0 ↔ n.toInt ≤ (0 : ISize64).toInt
+  rw [toInt_zero]
+
+@[simp] protected theorem ISize64.not_le {n m : ISize64} : ¬n ≤ m ↔ m < n := by
+  simp [le_iff_toInt_le, lt_iff_toInt_lt]
+
+@[simp] theorem ISize64.neg_nonpos_iff (n : ISize64) : -n ≤ 0 ↔ n = minValue ∨ 0 ≤ n := by
+  rw [le_iff_toBitVec_sle, toBitVec_zero, toBitVec_neg, BitVec.neg_sle_zero (by decide)]
+  simp [← toBitVec_inj, le_iff_toBitVec_sle, BitVec.intMin_eq_neg_two_pow]
+
+@[simp] theorem ISize64.toNatClampNeg_pos_iff (n : ISize64) :
+    0 < n.toNatClampNeg ↔ 0 < n := by
+  rw [Nat.pos_iff_ne_zero, ne_eq, toNatClampNeg_eq_zero_iff, ISize64.not_le]
+
+@[simp] theorem ISize64.toInt_div (a b : ISize64) :
+    (a / b).toInt = (a.toInt.tdiv b.toInt).bmod (2 ^ 64) := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_div, BitVec.toInt_sdiv, toInt_toBitVec, toInt_toBitVec]
+
+theorem ISize64.toInt_div_of_ne_left (a b : ISize64) (h : a ≠ minValue) :
+    (a / b).toInt = a.toInt.tdiv b.toInt := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_div, BitVec.toInt_sdiv_of_ne_or_ne, toInt_toBitVec, toInt_toBitVec]
+  exact Or.inl (by simpa [← toBitVec_inj] using h)
+
+theorem ISize64.toInt_div_of_ne_right (a b : ISize64) (h : b ≠ -1) :
+    (a / b).toInt = a.toInt.tdiv b.toInt := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_div, BitVec.toInt_sdiv_of_ne_or_ne, toInt_toBitVec, toInt_toBitVec]
+  exact Or.inr (by simpa [← toBitVec_inj] using h)
+
+@[simp] theorem ISize64.minValue_div_neg_one : minValue / -1 = minValue := (rfl)
+
+@[simp] theorem ISize64.toInt_add (a b : ISize64) :
+    (a + b).toInt = (a.toInt + b.toInt).bmod (2 ^ 64) := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_add, BitVec.toInt_add, toInt_toBitVec, toInt_toBitVec]
+
+@[simp] theorem ISize64.toInt8_add (a b : ISize64) : (a + b).toInt8 = a.toInt8 + b.toInt8 :=
+  Int8.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
+@[simp] theorem ISize64.toInt16_add (a b : ISize64) : (a + b).toInt16 = a.toInt16 + b.toInt16 :=
+  Int16.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
+@[simp] theorem ISize64.toInt32_add (a b : ISize64) : (a + b).toInt32 = a.toInt32 + b.toInt32 :=
+  Int32.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
+@[simp] theorem ISize64.toISize_add (a b : ISize64) : (a + b).toISize = a.toISize + b.toISize :=
+  ISize.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
+
+@[simp] theorem ISize64.toInt_mul (a b : ISize64) :
+    (a * b).toInt = (a.toInt * b.toInt).bmod (2 ^ 64) := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_mul, BitVec.toInt_mul, toInt_toBitVec, toInt_toBitVec]
+
+@[simp] theorem ISize64.toInt8_mul (a b : ISize64) : (a * b).toInt8 = a.toInt8 * b.toInt8 :=
+  Int8.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
+@[simp] theorem ISize64.toInt16_mul (a b : ISize64) : (a * b).toInt16 = a.toInt16 * b.toInt16 :=
+  Int16.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
+@[simp] theorem ISize64.toInt32_mul (a b : ISize64) : (a * b).toInt32 = a.toInt32 * b.toInt32 :=
+  Int32.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
+@[simp] theorem ISize64.toISize_mul (a b : ISize64) : (a * b).toISize = a.toISize * b.toISize :=
+  ISize.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
+
+protected theorem ISize64.sub_eq_add_neg (a b : ISize64) : a - b = a + -b :=
+  ISize64.toBitVec.inj (by simp [BitVec.sub_eq_add_neg])
+
+@[simp] theorem ISize64.toInt_mod (a b : ISize64) :
+    (a % b).toInt = a.toInt.tmod b.toInt := by
+  rw [← toInt_toBitVec, ISize64.toBitVec_mod, BitVec.toInt_srem, toInt_toBitVec, toInt_toBitVec]
