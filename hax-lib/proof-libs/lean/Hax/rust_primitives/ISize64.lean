@@ -200,3 +200,11 @@ def ISize64.toUSize64 (a : ISize64) : USize64 := USize64.ofInt a.toInt
 
 /-- Converts a `USize64` to `ISize64`. -/
 def USize64.toISize64 (a : USize64) : ISize64 := ⟨a.toBitVec⟩
+
+/-!
+## Theorems from `declare_int_theorems`
+-/
+
+open Std Lean in
+set_option autoImplicit true in
+declare_int_theorems ISize64 64
