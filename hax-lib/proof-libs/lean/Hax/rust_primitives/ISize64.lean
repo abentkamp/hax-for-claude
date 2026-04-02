@@ -369,3 +369,87 @@ theorem ISize64.toInt_ofIntTruncate {x : Int} (h₁ : ISize64.minValue.toInt ≤
 theorem ISize64.ofInt_eq_iff_bmod_eq_toInt (a : Int) (b : ISize64) :
     ISize64.ofInt a = b ↔ a.bmod (2 ^ 64) = b.toInt := by
   simp [← ISize64.toInt_inj]
+
+/-!
+## More lemmas from `Init.Data.SInt.Lemmas` (lines 725–1000)
+-/
+
+-- Cross-type toInt lemmas needed below
+@[simp] theorem Int8.toInt_toISize64 (x : Int8) : x.toISize64.toInt = x.toInt :=
+  x.toBitVec.toInt_signExtend_of_le (by decide)
+@[simp] theorem Int16.toInt_toISize64 (x : Int16) : x.toISize64.toInt = x.toInt :=
+  x.toBitVec.toInt_signExtend_of_le (by decide)
+@[simp] theorem Int32.toInt_toISize64 (x : Int32) : x.toISize64.toInt = x.toInt :=
+  x.toBitVec.toInt_signExtend_of_le (by decide)
+@[simp] theorem Int64.toInt_toISize64 (x : Int64) : x.toISize64.toInt = x.toInt := (rfl)
+@[simp] theorem ISize.toInt_toISize64 (x : ISize) : x.toISize64.toInt = x.toInt :=
+  x.toBitVec.toInt_signExtend_of_le (by cases System.Platform.numBits_eq <;> simp_all)
+
+@[simp] theorem ISize64.ofIntTruncate_int8ToInt (x : Int8) : ISize64.ofIntTruncate x.toInt = x.toISize64 :=
+  ISize64.toInt.inj (by
+    rw [toInt_ofIntTruncate, Int8.toInt_toISize64]
+    · exact Int.le_trans (by decide) x.minValue_le_toInt
+    · exact Int.le_trans x.toInt_le (by decide))
+
+@[simp] theorem ISize64.ofIntTruncate_int16ToInt (x : Int16) : ISize64.ofIntTruncate x.toInt = x.toISize64 :=
+  ISize64.toInt.inj (by
+    rw [toInt_ofIntTruncate, Int16.toInt_toISize64]
+    · exact Int.le_trans (by decide) x.minValue_le_toInt
+    · exact Int.le_trans x.toInt_le (by decide))
+
+@[simp] theorem ISize64.ofIntTruncate_int32ToInt (x : Int32) : ISize64.ofIntTruncate x.toInt = x.toISize64 :=
+  ISize64.toInt.inj (by
+    rw [toInt_ofIntTruncate, Int32.toInt_toISize64]
+    · exact Int.le_trans (by decide) x.minValue_le_toInt
+    · exact Int.le_trans x.toInt_le (by decide))
+
+@[simp] theorem ISize64.ofIntTruncate_int64ToInt (x : Int64) : ISize64.ofIntTruncate x.toInt = x.toISize64 :=
+  ISize64.toInt.inj (by
+    rw [toInt_ofIntTruncate, Int64.toInt_toISize64]
+    · exact x.minValue_le_toInt
+    · exact x.toInt_le)
+
+@[simp] theorem ISize64.ofIntTruncate_iSizeToInt (x : ISize) : ISize64.ofIntTruncate x.toInt = x.toISize64 :=
+  ISize64.toInt.inj (by
+    rw [toInt_ofIntTruncate, ISize.toInt_toISize64]
+    · exact Int.le_trans (by decide) x.le_toInt
+    · exact Int.le_of_lt_add_one x.toInt_lt)
+
+theorem ISize64.le_iff_toInt_le {x y : ISize64} : x ≤ y ↔ x.toInt ≤ y.toInt := BitVec.sle_iff_toInt_le
+
+theorem ISize64.lt_iff_toInt_lt {x y : ISize64} : x < y ↔ x.toInt < y.toInt := BitVec.slt_iff_toInt_lt
+
+theorem ISize64.cast_toNatClampNeg (x : ISize64) (hx : 0 ≤ x) : x.toNatClampNeg = x.toInt := by
+  rw [toNatClampNeg, toInt, Int.toNat_of_nonneg (by simpa using le_iff_toInt_le.1 hx)]
+
+theorem ISize64.ofNat_toNatClampNeg (x : ISize64) (hx : 0 ≤ x) : ISize64.ofNat x.toNatClampNeg = x :=
+  ISize64.toInt.inj (by rw [ISize64.toInt_ofNat_of_lt x.toNatClampNeg_lt, cast_toNatClampNeg _ hx])
+
+theorem ISize64.ofNat_int8ToNatClampNeg (x : Int8) (hx : 0 ≤ x) : ISize64.ofNat x.toNatClampNeg = x.toISize64 :=
+  ISize64.toInt.inj (by rw [ISize64.toInt_ofNat_of_lt (Nat.lt_of_lt_of_le x.toNatClampNeg_lt (by decide)),
+    Int8.cast_toNatClampNeg _ hx, Int8.toInt_toISize64])
+
+theorem ISize64.ofNat_int16ToNatClampNeg (x : Int16) (hx : 0 ≤ x) : ISize64.ofNat x.toNatClampNeg = x.toISize64 :=
+  ISize64.toInt.inj (by rw [ISize64.toInt_ofNat_of_lt (Nat.lt_of_lt_of_le x.toNatClampNeg_lt (by decide)),
+    Int16.cast_toNatClampNeg _ hx, Int16.toInt_toISize64])
+
+theorem ISize64.ofNat_int32ToNatClampNeg (x : Int32) (hx : 0 ≤ x) : ISize64.ofNat x.toNatClampNeg = x.toISize64 :=
+  ISize64.toInt.inj (by rw [ISize64.toInt_ofNat_of_lt (Nat.lt_of_lt_of_le x.toNatClampNeg_lt (by decide)),
+    Int32.cast_toNatClampNeg _ hx, Int32.toInt_toISize64])
+
+@[simp] theorem ISize64.toInt8_toInt16 (n : ISize64) : n.toInt16.toInt8 = n.toInt8 :=
+  Int8.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt8_toInt32 (n : ISize64) : n.toInt32.toInt8 = n.toInt8 :=
+  Int8.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt8_toISize (n : ISize64) : n.toISize.toInt8 = n.toInt8 :=
+  Int8.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by cases System.Platform.numBits_eq <;> simp_all))
+
+@[simp] theorem ISize64.toInt16_toInt32 (n : ISize64) : n.toInt32.toInt16 = n.toInt16 :=
+  Int16.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by decide))
+@[simp] theorem ISize64.toInt16_toISize (n : ISize64) : n.toISize.toInt16 = n.toInt16 :=
+  Int16.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by cases System.Platform.numBits_eq <;> simp_all))
+
+@[simp] theorem ISize64.toInt32_toISize (n : ISize64) : n.toISize.toInt32 = n.toInt32 :=
+  Int32.toInt.inj (by simpa using Int.bmod_bmod_of_dvd (by cases System.Platform.numBits_eq <;> simp_all))
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_ofBitVec' (b) : (ISize64.ofBitVec b).toBitVec = b := (rfl)
