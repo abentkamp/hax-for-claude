@@ -643,3 +643,304 @@ protected theorem ISize64.sub_eq_add_neg (a b : ISize64) : a - b = a + -b :=
 @[simp] theorem ISize64.toInt_mod (a b : ISize64) :
     (a % b).toInt = a.toInt.tmod b.toInt := by
   rw [← toInt_toBitVec, ISize64.toBitVec_mod, BitVec.toInt_srem, toInt_toBitVec, toInt_toBitVec]
+
+/-!
+## Lemmas from `Init.Data.SInt.Lemmas` (lines 1838–2600): subtraction, ofInt arithmetic, order, algebra
+-/
+
+@[simp] theorem ISize64.toInt_sub (a b : ISize64) :
+    (a - b).toInt = (a.toInt - b.toInt).bmod (2 ^ 64) := by
+  simp [ISize64.sub_eq_add_neg, Int.sub_eq_add_neg]
+
+@[simp] theorem ISize64.toInt8_sub (a b : ISize64) : (a - b).toInt8 = a.toInt8 - b.toInt8 := by
+  simp [ISize64.sub_eq_add_neg, Int8.sub_eq_add_neg]
+@[simp] theorem ISize64.toInt16_sub (a b : ISize64) : (a - b).toInt16 = a.toInt16 - b.toInt16 := by
+  simp [ISize64.sub_eq_add_neg, Int16.sub_eq_add_neg]
+@[simp] theorem ISize64.toInt32_sub (a b : ISize64) : (a - b).toInt32 = a.toInt32 - b.toInt32 := by
+  simp [ISize64.sub_eq_add_neg, Int32.sub_eq_add_neg]
+@[simp] theorem ISize64.toISize_sub (a b : ISize64) : (a - b).toISize = a.toISize - b.toISize := by
+  simp [ISize64.sub_eq_add_neg, ISize.sub_eq_add_neg]
+
+@[simp] theorem ISize64.ofBitVec_neg (a : BitVec 64) : ISize64.ofBitVec (-a) = -ISize64.ofBitVec a := (rfl)
+
+@[simp] theorem ISize64.ofInt_neg (a : Int) : ISize64.ofInt (-a) = -ISize64.ofInt a :=
+  ISize64.toInt_inj.1 (by simp)
+
+@[simp] theorem ISize64.ofBitVec_add (a b : BitVec 64) :
+    ISize64.ofBitVec (a + b) = ISize64.ofBitVec a + ISize64.ofBitVec b := (rfl)
+
+@[simp] theorem ISize64.ofInt_add (a b : Int) :
+    ISize64.ofInt (a + b) = ISize64.ofInt a + ISize64.ofInt b := by
+  simp [ofInt_eq_iff_bmod_eq_toInt]
+
+@[simp] theorem ISize64.ofNat_add (a b : Nat) :
+    ISize64.ofNat (a + b) = ISize64.ofNat a + ISize64.ofNat b := by
+  simp [← ofInt_eq_ofNat, ofInt_add]
+
+theorem ISize64.ofIntLE_add {a b : Int} {hab₁ hab₂} :
+    ISize64.ofIntLE (a + b) hab₁ hab₂ = ISize64.ofInt a + ISize64.ofInt b := by
+  simp [ofIntLE]
+
+@[simp] theorem ISize64.ofBitVec_sub (a b : BitVec 64) :
+    ISize64.ofBitVec (a - b) = ISize64.ofBitVec a - ISize64.ofBitVec b := (rfl)
+
+@[simp] theorem ISize64.ofInt_sub (a b : Int) :
+    ISize64.ofInt (a - b) = ISize64.ofInt a - ISize64.ofInt b := by
+  simp [Int.sub_eq_add_neg, ISize64.sub_eq_add_neg]
+
+@[simp] theorem ISize64.ofNat_sub (a b : Nat) (hab : b ≤ a) :
+    ISize64.ofNat (a - b) = ISize64.ofNat a - ISize64.ofNat b := by
+  rw [← ISize64.ofInt_eq_ofNat, ← ISize64.ofInt_eq_ofNat, ← ISize64.ofInt_eq_ofNat,
+    ← ISize64.ofInt_sub, Int.ofNat_sub hab]
+
+theorem ISize64.ofIntLE_sub {a b : Int} {hab₁ hab₂} :
+    ISize64.ofIntLE (a - b) hab₁ hab₂ = ISize64.ofInt a - ISize64.ofInt b := by
+  simp [ofIntLE]
+
+@[simp] theorem ISize64.ofBitVec_mul (a b : BitVec 64) :
+    ISize64.ofBitVec (a * b) = ISize64.ofBitVec a * ISize64.ofBitVec b := (rfl)
+
+@[simp] theorem ISize64.ofInt_mul (a b : Int) :
+    ISize64.ofInt (a * b) = ISize64.ofInt a * ISize64.ofInt b := by
+  simp [ofInt_eq_iff_bmod_eq_toInt]
+
+@[simp] theorem ISize64.ofNat_mul (a b : Nat) :
+    ISize64.ofNat (a * b) = ISize64.ofNat a * ISize64.ofNat b := by
+  simp [← ofInt_eq_ofNat, ofInt_mul]
+
+theorem ISize64.ofIntLE_mul {a b : Int} {hab₁ hab₂} :
+    ISize64.ofIntLE (a * b) hab₁ hab₂ = ISize64.ofInt a * ISize64.ofInt b := by
+  simp [ofIntLE]
+
+@[simp] theorem ISize64.ofBitVec_sdiv (a b : BitVec 64) :
+    ISize64.ofBitVec (a.sdiv b) = ISize64.ofBitVec a / ISize64.ofBitVec b := (rfl)
+
+@[simp] theorem ISize64.ofBitVec_srem (a b : BitVec 64) :
+    ISize64.ofBitVec (a.srem b) = ISize64.ofBitVec a % ISize64.ofBitVec b := (rfl)
+
+/-!
+### Algebraic lemmas
+-/
+
+protected theorem ISize64.add_assoc (a b c : ISize64) : a + b + c = a + (b + c) :=
+  ISize64.toBitVec_inj.1 (BitVec.add_assoc _ _ _)
+instance : Std.Associative (α := ISize64) (· + ·) := ⟨ISize64.add_assoc⟩
+
+protected theorem ISize64.add_comm (a b : ISize64) : a + b = b + a :=
+  ISize64.toBitVec_inj.1 (BitVec.add_comm _ _)
+instance : Std.Commutative (α := ISize64) (· + ·) := ⟨ISize64.add_comm⟩
+
+@[simp] protected theorem ISize64.add_zero (a : ISize64) : a + 0 = a :=
+  ISize64.toBitVec_inj.1 (BitVec.add_zero _)
+@[simp] protected theorem ISize64.zero_add (a : ISize64) : 0 + a = a :=
+  ISize64.toBitVec_inj.1 (BitVec.zero_add _)
+
+@[simp] protected theorem ISize64.sub_zero (a : ISize64) : a - 0 = a :=
+  ISize64.toBitVec_inj.1 (BitVec.sub_zero _)
+@[simp] protected theorem ISize64.zero_sub (a : ISize64) : 0 - a = -a :=
+  ISize64.toBitVec_inj.1 (BitVec.zero_sub _)
+@[simp] protected theorem ISize64.sub_self (a : ISize64) : a - a = 0 :=
+  ISize64.toBitVec_inj.1 (BitVec.sub_self _)
+
+protected theorem ISize64.add_left_neg (a : ISize64) : -a + a = 0 :=
+  ISize64.toBitVec_inj.1 (BitVec.add_left_neg _)
+protected theorem ISize64.add_right_neg (a : ISize64) : a + -a = 0 :=
+  ISize64.toBitVec_inj.1 (BitVec.add_right_neg _)
+
+@[simp] protected theorem ISize64.sub_add_cancel (a b : ISize64) : a - b + b = a :=
+  ISize64.toBitVec_inj.1 (BitVec.sub_add_cancel _ _)
+@[simp] protected theorem ISize64.add_sub_cancel (a b : ISize64) : a + b - b = a :=
+  ISize64.toBitVec_inj.1 (BitVec.add_sub_cancel _ _)
+
+protected theorem ISize64.eq_sub_iff_add_eq {a b c : ISize64} : a = c - b ↔ a + b = c :=
+  ⟨fun h => by rw [h, ISize64.sub_add_cancel], fun h => by rw [← h, ISize64.add_sub_cancel]⟩
+protected theorem ISize64.sub_eq_iff_eq_add {a b c : ISize64} : a - b = c ↔ a = c + b :=
+  ⟨fun h => by rw [← h, ISize64.sub_add_cancel], fun h => by rw [h, ISize64.add_sub_cancel]⟩
+
+@[simp] protected theorem ISize64.neg_neg {a : ISize64} : - -a = a :=
+  ISize64.toBitVec_inj.1 BitVec.neg_neg
+@[simp] protected theorem ISize64.neg_inj {a b : ISize64} : -a = -b ↔ a = b := by
+  simp [← ISize64.toBitVec_inj]
+@[simp] protected theorem ISize64.neg_ne_zero {a : ISize64} : -a ≠ 0 ↔ a ≠ 0 := by
+  simp [← ISize64.toBitVec_inj]
+
+protected theorem ISize64.neg_add {a b : ISize64} : - (a + b) = -a - b :=
+  ISize64.toBitVec_inj.1 BitVec.neg_add
+@[simp] protected theorem ISize64.sub_neg {a b : ISize64} : a - -b = a + b :=
+  ISize64.toBitVec_inj.1 BitVec.sub_neg
+@[simp] protected theorem ISize64.neg_sub {a b : ISize64} : -(a - b) = b - a := by
+  apply ISize64.toBitVec_inj.1
+  simp [BitVec.sub_eq_add_neg, BitVec.neg_add, BitVec.add_comm]
+
+protected theorem ISize64.sub_sub (a b c : ISize64) : a - b - c = a - (b + c) := by
+  simp [ISize64.sub_eq_add_neg, ISize64.add_assoc, ISize64.neg_add]
+
+@[simp] protected theorem ISize64.add_left_inj {a b : ISize64} (c : ISize64) : (a + c = b + c) ↔ a = b := by
+  constructor <;> intro h
+  · have := congrArg (· - c) h; simpa using this
+  · subst h; rfl
+@[simp] protected theorem ISize64.add_right_inj {a b : ISize64} (c : ISize64) : (c + a = c + b) ↔ a = b := by
+  rw [ISize64.add_comm c a, ISize64.add_comm c b, ISize64.add_left_inj]
+@[simp] protected theorem ISize64.sub_left_inj {a b : ISize64} (c : ISize64) : (a - c = b - c) ↔ a = b := by
+  simp [ISize64.sub_eq_add_neg]
+@[simp] protected theorem ISize64.sub_right_inj {a b : ISize64} (c : ISize64) : (c - a = c - b) ↔ a = b := by
+  simp [ISize64.sub_eq_add_neg]
+
+@[simp] theorem ISize64.add_eq_right {a b : ISize64} : a + b = b ↔ a = 0 := by
+  constructor
+  · intro h; have := congrArg (· - b) h; simpa using this
+  · rintro rfl; simp
+@[simp] theorem ISize64.add_eq_left {a b : ISize64} : a + b = a ↔ b = 0 := by
+  rw [ISize64.add_comm, ISize64.add_eq_right]
+@[simp] theorem ISize64.right_eq_add {a b : ISize64} : b = a + b ↔ a = 0 := by
+  rw [eq_comm, ISize64.add_eq_right]
+@[simp] theorem ISize64.left_eq_add {a b : ISize64} : a = a + b ↔ b = 0 := by
+  rw [eq_comm, ISize64.add_eq_left]
+
+protected theorem ISize64.mul_comm (a b : ISize64) : a * b = b * a :=
+  ISize64.toBitVec_inj.1 (BitVec.mul_comm _ _)
+instance : Std.Commutative (α := ISize64) (· * ·) := ⟨ISize64.mul_comm⟩
+
+protected theorem ISize64.mul_assoc (a b c : ISize64) : a * b * c = a * (b * c) :=
+  ISize64.toBitVec_inj.1 (BitVec.mul_assoc _ _ _)
+instance : Std.Associative (α := ISize64) (· * ·) := ⟨ISize64.mul_assoc⟩
+
+@[simp] theorem ISize64.mul_one (a : ISize64) : a * 1 = a :=
+  ISize64.toBitVec_inj.1 (BitVec.mul_one _)
+@[simp] theorem ISize64.one_mul (a : ISize64) : 1 * a = a :=
+  ISize64.toBitVec_inj.1 (BitVec.one_mul _)
+@[simp] theorem ISize64.mul_zero {a : ISize64} : a * 0 = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.mul_zero
+@[simp] theorem ISize64.zero_mul {a : ISize64} : 0 * a = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.zero_mul
+
+@[simp] protected theorem ISize64.pow_zero (x : ISize64) : x ^ 0 = 1 := (rfl)
+protected theorem ISize64.pow_succ (x : ISize64) (n : Nat) : x ^ (n + 1) = x ^ n * x := (rfl)
+
+protected theorem ISize64.mul_add {a b c : ISize64} : a * (b + c) = a * b + a * c :=
+  ISize64.toBitVec_inj.1 BitVec.mul_add
+protected theorem ISize64.add_mul {a b c : ISize64} : (a + b) * c = a * c + b * c := by
+  rw [ISize64.mul_comm, ISize64.mul_add, ISize64.mul_comm a c, ISize64.mul_comm c b]
+
+protected theorem ISize64.mul_succ {a b : ISize64} : a * (b + 1) = a * b + a := by
+  simp [ISize64.mul_add]
+protected theorem ISize64.succ_mul {a b : ISize64} : (a + 1) * b = a * b + b := by
+  simp [ISize64.add_mul]
+
+protected theorem ISize64.two_mul {a : ISize64} : 2 * a = a + a :=
+  ISize64.toBitVec_inj.1 BitVec.two_mul
+protected theorem ISize64.mul_two {a : ISize64} : a * 2 = a + a :=
+  ISize64.toBitVec_inj.1 BitVec.mul_two
+
+protected theorem ISize64.neg_mul (a b : ISize64) : -a * b = -(a * b) :=
+  ISize64.toBitVec_inj.1 (BitVec.neg_mul _ _)
+protected theorem ISize64.mul_neg (a b : ISize64) : a * -b = -(a * b) :=
+  ISize64.toBitVec_inj.1 (BitVec.mul_neg _ _)
+protected theorem ISize64.neg_mul_neg (a b : ISize64) : -a * -b = a * b :=
+  ISize64.toBitVec_inj.1 (BitVec.neg_mul_neg _ _)
+protected theorem ISize64.neg_mul_comm (a b : ISize64) : -a * b = a * -b :=
+  ISize64.toBitVec_inj.1 (BitVec.neg_mul_comm _ _)
+
+protected theorem ISize64.mul_sub {a b c : ISize64} : a * (b - c) = a * b - a * c :=
+  ISize64.toBitVec_inj.1 BitVec.mul_sub
+protected theorem ISize64.sub_mul {a b c : ISize64} : (a - b) * c = a * c - b * c := by
+  rw [ISize64.mul_comm, ISize64.mul_sub, ISize64.mul_comm c a, ISize64.mul_comm c b]
+
+protected theorem ISize64.add_neg_eq_sub {a b : ISize64} : a + -b = a - b :=
+  ISize64.toBitVec_inj.1 BitVec.add_neg_eq_sub
+
+theorem ISize64.neg_eq_neg_one_mul (a : ISize64) : -a = -1 * a := by
+  rw [show (-1 : ISize64) = -1 from rfl, ISize64.neg_mul, ISize64.one_mul]
+
+/-!
+### Order properties
+-/
+
+protected theorem ISize64.le_of_lt {a b : ISize64} : a < b → a ≤ b := by
+  simp only [le_iff_toInt_le, lt_iff_toInt_lt]; omega
+
+protected theorem ISize64.lt_of_le_of_ne {a b : ISize64} : a ≤ b → a ≠ b → a < b := by
+  rw [le_iff_toInt_le, lt_iff_toInt_lt, ne_eq, ← toInt_inj]
+  omega
+
+protected theorem ISize64.lt_iff_le_and_ne {a b : ISize64} : a < b ↔ a ≤ b ∧ a ≠ b := by
+  simp [← ISize64.toInt_inj, le_iff_toInt_le, lt_iff_toInt_lt]; omega
+
+@[simp] protected theorem ISize64.lt_irrefl {a : ISize64} : ¬a < a := by
+  simp [lt_iff_toInt_lt]
+
+protected theorem ISize64.lt_of_le_of_lt {a b c : ISize64} : a ≤ b → b < c → a < c := by
+  simp only [le_iff_toInt_le, lt_iff_toInt_lt]; omega
+protected theorem ISize64.lt_of_lt_of_le {a b c : ISize64} : a < b → b ≤ c → a < c := by
+  simp only [le_iff_toInt_le, lt_iff_toInt_lt]; omega
+
+@[simp] theorem ISize64.minValue_le (a : ISize64) : minValue ≤ a := by
+  simpa [le_iff_toInt_le] using a.minValue_le_toInt
+@[simp] theorem ISize64.le_maxValue (a : ISize64) : a ≤ maxValue := by
+  simpa [le_iff_toInt_le] using a.toInt_le
+
+@[simp] theorem ISize64.not_lt_minValue {a : ISize64} : ¬a < minValue :=
+  fun h => ISize64.lt_irrefl (ISize64.lt_of_lt_of_le h (ISize64.minValue_le _))
+@[simp] theorem ISize64.not_maxValue_lt {a : ISize64} : ¬maxValue < a :=
+  fun h => ISize64.lt_irrefl (ISize64.lt_of_lt_of_le h (ISize64.le_maxValue _))
+
+@[simp] protected theorem ISize64.le_refl (a : ISize64) : a ≤ a := by
+  simp [ISize64.le_iff_toInt_le]
+protected theorem ISize64.le_rfl {a : ISize64} : a ≤ a := ISize64.le_refl _
+
+protected theorem ISize64.le_antisymm_iff {a b : ISize64} : a = b ↔ a ≤ b ∧ b ≤ a :=
+  ⟨fun h => ⟨h ▸ ISize64.le_rfl, h ▸ ISize64.le_rfl⟩,
+   fun ⟨h1, h2⟩ => ISize64.toInt_inj.1 (by simp only [le_iff_toInt_le] at *; omega)⟩
+protected theorem ISize64.le_antisymm {a b : ISize64} : a ≤ b → b ≤ a → a = b := by
+  simpa using ISize64.le_antisymm_iff.2
+
+@[simp] theorem ISize64.le_minValue_iff {a : ISize64} : a ≤ minValue ↔ a = minValue :=
+  ⟨fun h => ISize64.le_antisymm h (ISize64.minValue_le _), fun h => h ▸ ISize64.le_rfl⟩
+@[simp] theorem ISize64.maxValue_le_iff {a : ISize64} : maxValue ≤ a ↔ a = maxValue :=
+  ⟨fun h => (ISize64.le_antisymm h (ISize64.le_maxValue _)).symm, fun h => h ▸ ISize64.le_rfl⟩
+
+@[simp] protected theorem ISize64.zero_div {a : ISize64} : 0 / a = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.zero_sdiv
+@[simp] protected theorem ISize64.div_zero {a : ISize64} : a / 0 = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.sdiv_zero
+@[simp] protected theorem ISize64.div_one {a : ISize64} : a / 1 = a :=
+  ISize64.toBitVec_inj.1 BitVec.sdiv_one
+protected theorem ISize64.div_self {a : ISize64} : a / a = if a = 0 then 0 else 1 := by
+  simp [← ISize64.toBitVec_inj, apply_ite]
+
+@[simp] protected theorem ISize64.mod_zero {a : ISize64} : a % 0 = a :=
+  ISize64.toBitVec_inj.1 BitVec.srem_zero
+@[simp] protected theorem ISize64.zero_mod {a : ISize64} : 0 % a = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.zero_srem
+@[simp] protected theorem ISize64.mod_one {a : ISize64} : a % 1 = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.srem_one
+@[simp] protected theorem ISize64.mod_self {a : ISize64} : a % a = 0 :=
+  ISize64.toBitVec_inj.1 BitVec.srem_self
+
+protected theorem ISize64.le_trans {a b c : ISize64} : a ≤ b → b ≤ c → a ≤ c := by
+  simp only [le_iff_toInt_le]; omega
+protected theorem ISize64.lt_trans {a b c : ISize64} : a < b → b < c → a < c := by
+  simp only [lt_iff_toInt_lt]; omega
+protected theorem ISize64.le_total (a b : ISize64) : a ≤ b ∨ b ≤ a := by
+  simp only [le_iff_toInt_le]; omega
+protected theorem ISize64.lt_asymm {a b : ISize64} : a < b → ¬b < a :=
+  fun hab hba => ISize64.lt_irrefl (ISize64.lt_trans hab hba)
+
+protected theorem ISize64.lt_or_lt_of_ne {a b : ISize64} : a ≠ b → a < b ∨ b < a := by
+  simp [lt_iff_toInt_lt, ← ISize64.toInt_inj]; omega
+protected theorem ISize64.lt_or_le (a b : ISize64) : a < b ∨ b ≤ a := by
+  simp only [lt_iff_toInt_lt, le_iff_toInt_le]; omega
+protected theorem ISize64.le_or_lt (a b : ISize64) : a ≤ b ∨ b < a :=
+  (b.lt_or_le a).symm
+protected theorem ISize64.le_of_eq {a b : ISize64} : a = b → a ≤ b := (· ▸ ISize64.le_rfl)
+protected theorem ISize64.le_iff_lt_or_eq {a b : ISize64} : a ≤ b ↔ a < b ∨ a = b := by
+  simp [← ISize64.toInt_inj, le_iff_toInt_le, lt_iff_toInt_lt]; omega
+protected theorem ISize64.lt_or_eq_of_le {a b : ISize64} : a ≤ b → a < b ∨ a = b :=
+  ISize64.le_iff_lt_or_eq.mp
+
+protected theorem ISize64.ne_of_lt {a b : ISize64} : a < b → a ≠ b := by
+  simpa [ISize64.lt_iff_toInt_lt, ← ISize64.toInt_inj] using Int.ne_of_lt
+
+theorem ISize64.toInt_eq_toNatClampNeg {a : ISize64} (ha : 0 ≤ a) :
+    a.toInt = a.toNatClampNeg := by
+  rw [cast_toNatClampNeg _ ha]
