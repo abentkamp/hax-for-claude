@@ -944,3 +944,45 @@ protected theorem ISize64.ne_of_lt {a b : ISize64} : a < b → a ≠ b := by
 theorem ISize64.toInt_eq_toNatClampNeg {a : ISize64} (ha : 0 ≤ a) :
     a.toInt = a.toNatClampNeg := by
   rw [cast_toNatClampNeg _ ha]
+
+/-!
+## Missing UInt64-related cross-conversion lemmas (up to line 1840)
+-/
+
+@[simp] theorem ISize64.ofBitVec_uInt64ToBitVec (x : UInt64) :
+    ISize64.ofBitVec x.toBitVec = x.toISize64 := (rfl)
+
+theorem ISize64.ofIntLE_int8ToInt (x : Int8) {h₁ h₂} :
+    ISize64.ofIntLE x.toInt h₁ h₂ = x.toISize64 := (rfl)
+theorem ISize64.ofIntLE_int16ToInt (x : Int16) {h₁ h₂} :
+    ISize64.ofIntLE x.toInt h₁ h₂ = x.toISize64 := (rfl)
+theorem ISize64.ofIntLE_int32ToInt (x : Int32) {h₁ h₂} :
+    ISize64.ofIntLE x.toInt h₁ h₂ = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofIntLE_iSizeToInt (x : ISize) :
+    ISize64.ofIntLE x.toInt (Int.le_trans (by decide) x.le_toInt)
+      (Int.le_of_lt_add_one x.toInt_lt) = x.toISize64 := (rfl)
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toUInt64 (x : ISize64) :
+    x.toUInt64.toBitVec = x.toBitVec := (rfl)
+
+theorem ISize64.toFin_toBitVec (x : ISize64) :
+    x.toBitVec.toFin = x.toUInt64.toFin := (rfl)
+
+@[simp] theorem ISize64.toInt64_toUInt64 (x : ISize64) :
+    x.toUInt64.toInt64 = x.toInt64 := (rfl)
+
+theorem ISize64.toNat_toBitVec (x : ISize64) :
+    x.toBitVec.toNat = x.toUInt64.toNat := (rfl)
+
+theorem ISize64.toNat_toBitVec_of_le {x : ISize64} (hx : 0 ≤ x) :
+    x.toBitVec.toNat = x.toNatClampNeg :=
+  (x.toBitVec.toNat_toInt_of_sle hx).symm
+
+theorem ISize64.toNat_toUInt64_of_le {x : ISize64} (hx : 0 ≤ x) :
+    x.toUInt64.toNat = x.toNatClampNeg := by
+  rw [← toNat_toBitVec, toNat_toBitVec_of_le hx]
+
+@[simp] theorem ISize64.toUInt64_ofNat' {n} :
+    (ISize64.ofNat n).toUInt64 = UInt64.ofNat n := (rfl)
+@[simp] theorem ISize64.toUInt64_ofNat {n} :
+    toUInt64 (OfNat.ofNat n) = OfNat.ofNat n := (rfl)
