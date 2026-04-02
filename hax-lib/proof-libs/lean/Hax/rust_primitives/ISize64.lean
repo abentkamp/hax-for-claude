@@ -208,3 +208,164 @@ def USize64.toISize64 (a : USize64) : ISize64 := ⟨a.toBitVec⟩
 open Std Lean in
 set_option autoImplicit true in
 declare_int_theorems ISize64 64
+
+/-!
+## Lemmas from `Init.Data.SInt.Lemmas` (up to line 725)
+-/
+
+theorem ISize64.toInt.inj {x y : ISize64} (h : x.toInt = y.toInt) : x = y :=
+  ISize64.toBitVec.inj (BitVec.eq_of_toInt_eq h)
+theorem ISize64.toInt_inj {x y : ISize64} : x.toInt = y.toInt ↔ x = y :=
+  ⟨ISize64.toInt.inj, fun h => h ▸ rfl⟩
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_neg (x : ISize64) : (-x).toBitVec = -x.toBitVec := (rfl)
+
+@[simp] theorem ISize64.toBitVec_zero : toBitVec 0 = 0#64 := (rfl)
+
+theorem ISize64.toBitVec_one : (1 : ISize64).toBitVec = 1#64 := (rfl)
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_ofInt (i : Int) : (ofInt i).toBitVec = BitVec.ofInt _ i := (rfl)
+
+@[simp] protected theorem ISize64.neg_zero : -(0 : ISize64) = 0 := (rfl)
+
+@[simp] theorem ISize64.toInt_ofInt {n : Int} : toInt (ofInt n) = n.bmod ISize64.size := by
+  rw [toInt, toBitVec_ofInt, BitVec.toInt_ofInt]
+
+@[simp] theorem ISize64.toInt_ofNat' {n : Nat} : toInt (ofNat n) = (n : Int).bmod ISize64.size := by
+  rw [toInt, toBitVec_ofNat', BitVec.toInt_ofNat']
+
+theorem ISize64.toInt_ofNat {n : Nat} : toInt (no_index (OfNat.ofNat n)) = (n : Int).bmod ISize64.size := by
+  rw [toInt, toBitVec_ofNat, BitVec.toInt_ofNat]
+
+theorem ISize64.toInt_ofInt_of_le {n : Int} (hn : -2^63 ≤ n) (hn' : n < 2^63) : toInt (ofInt n) = n := by
+  rw [toInt, toBitVec_ofInt, BitVec.toInt_ofInt_eq_self (by decide) hn hn']
+
+theorem ISize64.neg_ofInt {n : Int} : -ofInt n = ofInt (-n) :=
+  toBitVec.inj (by simp [BitVec.ofInt_neg])
+
+theorem ISize64.ofInt_eq_ofNat {n : Nat} : ofInt n = ofNat n := toBitVec.inj (by simp)
+
+theorem ISize64.neg_ofNat {n : Nat} : -ofNat n = ofInt (-n) := by
+  rw [← neg_ofInt, ofInt_eq_ofNat]
+
+theorem ISize64.toNatClampNeg_ofNat_of_lt {n : Nat} (h : n < 2 ^ 63) : toNatClampNeg (ofNat n) = n := by
+  rw [toNatClampNeg, ← ofInt_eq_ofNat, toInt_ofInt_of_le (by omega) (by omega), Int.toNat_natCast]
+
+theorem ISize64.toInt_ofNat_of_lt {n : Nat} (h : n < 2 ^ 63) : toInt (ofNat n) = n := by
+  rw [← ofInt_eq_ofNat, toInt_ofInt_of_le (by omega) (by omega)]
+
+theorem ISize64.toInt_neg_ofNat_of_le {n : Nat} (h : n ≤ 2^63) : toInt (-ofNat n) = -n := by
+  rw [← ofInt_eq_ofNat, neg_ofInt, toInt_ofInt_of_le (by omega) (by omega)]
+
+theorem ISize64.toInt_zero : toInt 0 = 0 := by
+  rw [toInt_ofNat, ISize64.size]; decide
+
+theorem ISize64.toInt_minValue : ISize64.minValue.toInt = -2^63 := (rfl)
+
+theorem ISize64.toInt_maxValue : ISize64.maxValue.toInt = 2 ^ 63 - 1 := (rfl)
+
+@[simp] theorem ISize64.toNatClampNeg_minValue : ISize64.minValue.toNatClampNeg = 0 := (rfl)
+
+@[simp] theorem ISize64.toNat_toInt (x : ISize64) : x.toInt.toNat = x.toNatClampNeg := (rfl)
+
+@[simp] theorem ISize64.toInt_toBitVec (x : ISize64) : x.toBitVec.toInt = x.toInt := (rfl)
+
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toInt8 (x : ISize64) :
+    x.toInt8.toBitVec = x.toBitVec.signExtend 8 := (rfl)
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toInt16 (x : ISize64) :
+    x.toInt16.toBitVec = x.toBitVec.signExtend 16 := (rfl)
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toInt32 (x : ISize64) :
+    x.toInt32.toBitVec = x.toBitVec.signExtend 32 := (rfl)
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toInt64 (x : ISize64) :
+    x.toInt64.toBitVec = x.toBitVec := (rfl)
+@[simp, int_toBitVec] theorem ISize64.toBitVec_toISize (x : ISize64) :
+    x.toISize.toBitVec = x.toBitVec.signExtend System.Platform.numBits := (rfl)
+
+theorem ISize64.toInt_lt (x : ISize64) : x.toInt < 2 ^ 63 :=
+  Int.lt_of_mul_lt_mul_left BitVec.two_mul_toInt_lt (by decide)
+
+theorem ISize64.le_toInt (x : ISize64) : -2 ^ 63 ≤ x.toInt :=
+  Int.le_of_mul_le_mul_left BitVec.le_two_mul_toInt (by decide)
+
+theorem ISize64.toInt_le (x : ISize64) : x.toInt ≤ ISize64.maxValue.toInt :=
+  Int.le_of_lt_add_one x.toInt_lt
+
+theorem ISize64.minValue_le_toInt (x : ISize64) : ISize64.minValue.toInt ≤ x.toInt := x.le_toInt
+
+theorem ISize64.toNatClampNeg_lt (x : ISize64) : x.toNatClampNeg < 2 ^ 63 :=
+  (Int.toNat_lt' (by decide)).2 x.toInt_lt
+
+@[simp] theorem ISize64.toInt_toInt8 (x : ISize64) : x.toInt8.toInt = x.toInt.bmod (2 ^ 8) :=
+  x.toBitVec.toInt_signExtend_eq_toInt_bmod_of_le (by decide)
+@[simp] theorem ISize64.toInt_toInt16 (x : ISize64) : x.toInt16.toInt = x.toInt.bmod (2 ^ 16) :=
+  x.toBitVec.toInt_signExtend_eq_toInt_bmod_of_le (by decide)
+@[simp] theorem ISize64.toInt_toInt32 (x : ISize64) : x.toInt32.toInt = x.toInt.bmod (2 ^ 32) :=
+  x.toBitVec.toInt_signExtend_eq_toInt_bmod_of_le (by decide)
+@[simp] theorem ISize64.toInt_toInt64 (x : ISize64) : x.toInt64.toInt = x.toInt := (rfl)
+@[simp] theorem ISize64.toInt_toISize (x : ISize64) :
+    x.toISize.toInt = x.toInt.bmod (2 ^ System.Platform.numBits) :=
+  x.toBitVec.toInt_signExtend_eq_toInt_bmod_of_le (by cases System.Platform.numBits_eq <;> simp_all)
+
+@[simp] theorem ISize64.ofBitVec_toBitVec (x : ISize64) : ISize64.ofBitVec x.toBitVec = x := (rfl)
+
+@[simp] theorem ISize64.ofBitVec_int8ToBitVec (x : Int8) :
+    ISize64.ofBitVec (x.toBitVec.signExtend 64) = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofBitVec_int16ToBitVec (x : Int16) :
+    ISize64.ofBitVec (x.toBitVec.signExtend 64) = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofBitVec_int32ToBitVec (x : Int32) :
+    ISize64.ofBitVec (x.toBitVec.signExtend 64) = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofBitVec_int64ToBitVec (x : Int64) :
+    ISize64.ofBitVec x.toBitVec = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofBitVec_iSizeToBitVec (x : ISize) :
+    ISize64.ofBitVec (x.toBitVec.signExtend 64) = x.toISize64 := (rfl)
+
+@[simp] theorem ISize64.toBitVec_ofIntLE (x : Int) (h₁ h₂) :
+    (ISize64.ofIntLE x h₁ h₂).toBitVec = BitVec.ofInt 64 x := (rfl)
+
+@[simp] theorem ISize64.toInt_bmod (x : ISize64) :
+    x.toInt.bmod 18446744073709551616 = x.toInt :=
+  Int.bmod_eq_of_le x.le_toInt x.toInt_lt
+
+-- Alias used by simp in other contexts
+@[simp] theorem ISize64.toInt_bmod_size (x : ISize64) :
+    x.toInt.bmod ISize64.size = x.toInt :=
+  ISize64.toInt_bmod x
+
+@[simp] theorem BitVec.ofInt_iSize64ToInt (x : ISize64) :
+    BitVec.ofInt 64 x.toInt = x.toBitVec :=
+  BitVec.eq_of_toInt_eq (by simp)
+
+@[simp] theorem ISize64.ofIntLE_toInt (x : ISize64) :
+    ISize64.ofIntLE x.toInt x.minValue_le_toInt x.toInt_le = x :=
+  ISize64.toBitVec.inj (by simp)
+
+@[simp] theorem ISize64.ofInt_toInt (x : ISize64) : ISize64.ofInt x.toInt = x :=
+  ISize64.toBitVec.inj (by simp)
+
+@[simp] theorem ISize64.ofInt_int8ToInt (x : Int8) : ISize64.ofInt x.toInt = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofInt_int16ToInt (x : Int16) : ISize64.ofInt x.toInt = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofInt_int32ToInt (x : Int32) : ISize64.ofInt x.toInt = x.toISize64 := (rfl)
+@[simp] theorem ISize64.ofInt_int64ToInt (x : Int64) : ISize64.ofInt x.toInt = x.toISize64 := by
+  show ISize64.ofBitVec (BitVec.ofInt 64 x.toBitVec.toInt) = ⟨x.toBitVec⟩
+  congr 1; exact BitVec.ofInt_toInt ..
+@[simp] theorem ISize64.ofInt_iSizeToInt (x : ISize) : ISize64.ofInt x.toInt = x.toISize64 := (rfl)
+
+@[simp] theorem ISize64.toInt_ofIntLE {x : Int} {h₁ h₂} : (ofIntLE x h₁ h₂).toInt = x := by
+  rw [ofIntLE, toInt_ofInt_of_le h₁ (Int.lt_of_le_sub_one h₂)]
+
+theorem ISize64.ofIntLE_eq_ofIntTruncate {x : Int} {h₁ h₂} :
+    (ofIntLE x h₁ h₂) = ofIntTruncate x := by
+  rw [ofIntTruncate, dif_pos h₁, dif_pos h₂]
+
+theorem ISize64.ofIntLE_eq_ofInt {n : Int} (h₁ h₂) : ISize64.ofIntLE n h₁ h₂ = ISize64.ofInt n := (rfl)
+
+theorem ISize64.toInt_ofIntTruncate {x : Int} (h₁ : ISize64.minValue.toInt ≤ x)
+    (h₂ : x ≤ ISize64.maxValue.toInt) : (ISize64.ofIntTruncate x).toInt = x := by
+  rw [← ofIntLE_eq_ofIntTruncate (h₁ := h₁) (h₂ := h₂), toInt_ofIntLE]
+
+@[simp] theorem ISize64.ofIntTruncate_toInt (x : ISize64) : ISize64.ofIntTruncate x.toInt = x :=
+  ISize64.toInt.inj (toInt_ofIntTruncate x.minValue_le_toInt x.toInt_le)
+
+theorem ISize64.ofInt_eq_iff_bmod_eq_toInt (a : Int) (b : ISize64) :
+    ISize64.ofInt a = b ↔ a.bmod (2 ^ 64) = b.toInt := by
+  simp [← ISize64.toInt_inj]
