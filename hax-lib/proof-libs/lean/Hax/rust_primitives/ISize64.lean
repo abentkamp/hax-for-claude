@@ -1066,3 +1066,100 @@ theorem ISize64.ofNat_div {a b : Nat} (ha : a < 2 ^ 63) (hb : b < 2 ^ 63) :
   rw [← ofInt_eq_ofNat, ← ofInt_eq_ofNat, ← ofInt_eq_ofNat, Int.ofNat_tdiv,
     ofInt_tdiv (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)
       (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)]
+
+/-!
+## Remaining items from lines 2600–3492 (end of file)
+-/
+
+instance : Std.LawfulCommIdentity (α := ISize64) (· * ·) 1 where
+  right_id := ISize64.mul_one
+
+theorem ISize64.neg_add_mul_eq_mul_not {a b : ISize64} : -(a + a * b) = a * ~~~b :=
+  ISize64.toBitVec_inj.1 BitVec.neg_add_mul_eq_mul_not
+
+theorem ISize64.neg_mul_not_eq_add_mul {a b : ISize64} : -(a * ~~~b) = a + a * b :=
+  ISize64.toBitVec_inj.1 BitVec.neg_mul_not_eq_add_mul
+
+@[simp] protected theorem ISize64.not_lt {a b : ISize64} : ¬ a < b ↔ b ≤ a := by
+  simp [lt_iff_toBitVec_slt, le_iff_toBitVec_sle, BitVec.sle_eq_not_slt]
+
+@[simp] theorem ISize64.toUInt64_add (a b : ISize64) : (a + b).toUInt64 = a.toUInt64 + b.toUInt64 := (rfl)
+@[simp] theorem ISize64.toUInt64_neg (a : ISize64) : (-a).toUInt64 = -a.toUInt64 := (rfl)
+@[simp] theorem ISize64.toUInt64_sub (a b : ISize64) : (a - b).toUInt64 = a.toUInt64 - b.toUInt64 := (rfl)
+@[simp] theorem ISize64.toUInt64_mul (a b : ISize64) : (a * b).toUInt64 = a.toUInt64 * b.toUInt64 := (rfl)
+
+theorem ISize64.toNatClampNeg_le {a b : ISize64} (hab : a ≤ b) : a.toNatClampNeg ≤ b.toNatClampNeg := by
+  rw [← ISize64.toNat_toInt, ← ISize64.toNat_toInt]
+  exact Int.toNat_le_toNat (ISize64.le_iff_toInt_le.1 hab)
+
+theorem ISize64.toUInt64_le {a b : ISize64} (ha : 0 ≤ a) (hab : a ≤ b) :
+    a.toUInt64 ≤ b.toUInt64 := by
+  rw [UInt64.le_iff_toNat_le, toNat_toUInt64_of_le ha, toNat_toUInt64_of_le (ISize64.le_trans ha hab)]
+  exact ISize64.toNatClampNeg_le hab
+
+theorem ISize64.zero_le_ofNat_of_lt {a : Nat} (ha : a < 2 ^ 63) : 0 ≤ ISize64.ofNat a := by
+  rw [le_iff_toInt_le, toInt_ofNat_of_lt ha, ISize64.toInt_zero]
+  exact Int.natCast_nonneg _
+
+protected theorem ISize64.sub_nonneg_of_le {a b : ISize64} (hb : 0 ≤ b) (hab : b ≤ a) :
+    0 ≤ a - b := by
+  rw [← ofNat_toNatClampNeg _ hb, ← ofNat_toNatClampNeg _ (ISize64.le_trans hb hab),
+    ← ofNat_sub _ _ (ISize64.toNatClampNeg_le hab)]
+  exact ISize64.zero_le_ofNat_of_lt (Nat.sub_lt_of_lt a.toNatClampNeg_lt)
+
+theorem ISize64.toNatClampNeg_sub_of_le {a b : ISize64} (hb : 0 ≤ b) (hab : b ≤ a) :
+    (a - b).toNatClampNeg = a.toNatClampNeg - b.toNatClampNeg := by
+  rw [← toNat_toUInt64_of_le (ISize64.sub_nonneg_of_le hb hab), toUInt64_sub,
+    UInt64.toNat_sub_of_le _ _ (ISize64.toUInt64_le hb hab),
+    ← toNat_toUInt64_of_le (ISize64.le_trans hb hab), ← toNat_toUInt64_of_le hb]
+
+theorem ISize64.toInt_sub_of_le (a b : ISize64) (hb : 0 ≤ b) (h : b ≤ a) :
+    (a - b).toInt = a.toInt - b.toInt := by
+  rw [ISize64.toInt_eq_toNatClampNeg (ISize64.sub_nonneg_of_le hb h),
+    ISize64.toInt_eq_toNatClampNeg (ISize64.le_trans hb h), ISize64.toInt_eq_toNatClampNeg hb,
+    ISize64.toNatClampNeg_sub_of_le hb h, Int.ofNat_sub]
+  exact ISize64.toNatClampNeg_le h
+
+protected theorem ISize64.sub_le {a b : ISize64} (hb : 0 ≤ b) (hab : b ≤ a) : a - b ≤ a := by
+  rw [le_iff_toInt_le, ISize64.toInt_sub_of_le _ _ hb hab]
+  have := le_iff_toInt_le.1 hb
+  rw [toInt_zero] at this
+  omega
+
+protected theorem ISize64.sub_lt {a b : ISize64} (hb : 0 < b) (hab : b ≤ a) : a - b < a := by
+  rw [lt_iff_toInt_lt, ISize64.toInt_sub_of_le _ _ (ISize64.le_of_lt hb) hab]
+  have := lt_iff_toInt_lt.1 hb
+  rw [toInt_zero] at this
+  omega
+
+theorem ISize64.ofInt_tmod {a b : Int} (ha₁ : minValue.toInt ≤ a) (ha₂ : a ≤ maxValue.toInt)
+    (hb₁ : minValue.toInt ≤ b) (hb₂ : b ≤ maxValue.toInt) :
+    ISize64.ofInt (a.tmod b) = ISize64.ofInt a % ISize64.ofInt b := by
+  rw [ISize64.ofInt_eq_iff_bmod_eq_toInt, ← toInt_bmod_size, toInt_mod, toInt_ofInt, toInt_ofInt,
+    Int.bmod_eq_of_le (n := a), Int.bmod_eq_of_le (n := b)]
+  · exact hb₁
+  · exact Int.lt_of_le_sub_one hb₂
+  · exact ha₁
+  · exact Int.lt_of_le_sub_one ha₂
+
+theorem ISize64.ofInt_eq_ofIntLE_mod {a b : Int} (ha₁ ha₂ hb₁ hb₂) :
+    ISize64.ofInt (a.tmod b) = ISize64.ofIntLE a ha₁ ha₂ % ISize64.ofIntLE b hb₁ hb₂ := by
+  rw [ofIntLE_eq_ofInt, ofIntLE_eq_ofInt, ofInt_tmod ha₁ ha₂ hb₁ hb₂]
+
+open Std in
+instance ISize64.instIsLinearOrder : IsLinearOrder ISize64 := by
+  apply IsLinearOrder.of_le
+  case le_antisymm => constructor; apply ISize64.le_antisymm
+  case le_total => constructor; apply ISize64.le_total
+  case le_trans => constructor; apply ISize64.le_trans
+
+open Std in
+instance : LawfulOrderLT ISize64 where
+  lt_iff := by
+    simp [← ISize64.not_le, Decidable.imp_iff_not_or, Total.total]
+
+theorem ISize64.ofNat_mod {a b : Nat} (ha : a < 2 ^ 63) (hb : b < 2 ^ 63) :
+    ISize64.ofNat (a % b) = ISize64.ofNat a % ISize64.ofNat b := by
+  rw [← ofInt_eq_ofNat, ← ofInt_eq_ofNat, ← ofInt_eq_ofNat, Int.ofNat_tmod,
+    ofInt_tmod (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)
+      (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)]
