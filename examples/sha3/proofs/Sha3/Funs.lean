@@ -140,7 +140,7 @@ def KeccakState.new
    Source: 'sha3/src/lib.rs', lines 112:4-114:5 -/
 def KeccakState._requires_set
   {T : Type} {N : Std.Usize} (KeccakItemInst : KeccakItem T N)
-  (self : KeccakState KeccakItemInst) (i : Std.Usize) (j : Std.Usize) 
+  (self : KeccakState KeccakItemInst) (i : Std.Usize) (j : Std.Usize)
   (v : T) :
   Result (Bool × (KeccakState KeccakItemInst))
   := do
@@ -152,7 +152,7 @@ def KeccakState._requires_set
    Source: 'sha3/src/lib.rs', lines 118:4-120:5 -/
 def KeccakState.set
   {T : Type} {N : Std.Usize} (KeccakItemInst : KeccakItem T N)
-  (self : KeccakState KeccakItemInst) (i : Std.Usize) (j : Std.Usize) 
+  (self : KeccakState KeccakItemInst) (i : Std.Usize) (j : Std.Usize)
   (v : T) :
   Result (KeccakState KeccakItemInst)
   := do
