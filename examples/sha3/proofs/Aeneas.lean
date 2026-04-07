@@ -71,4 +71,37 @@ def Slice.len {α : Type} (s : Slice α) : Usize :=
 
 end Std
 
+namespace core.clone
+
+structure Clone (T : Type) where
+  clone : T → Result T := fun x => .ok x
+
+def CloneU64 : Clone Std.U64 := {}
+
+end core.clone
+
+namespace core.marker
+
+structure Copy (T : Type) where
+  cloneInst : core.clone.Clone T := {}
+
+def CopyU64 : Copy Std.U64 := { cloneInst := core.clone.CloneU64 }
+
+end core.marker
+
+namespace core.array
+
+def CloneArray.clone {T : Type} {n : Std.Usize} (_cloneInst : core.clone.Clone T)
+    (a : Std.Array T n) : Result (Std.Array T n) :=
+  .ok a
+
+end core.array
+
+namespace core.ops.index
+
+structure Index (Self : Type) (Idx : Type) (Output : Type) where
+  index : Self → Idx → Result Output
+
+end core.ops.index
+
 end Aeneas
