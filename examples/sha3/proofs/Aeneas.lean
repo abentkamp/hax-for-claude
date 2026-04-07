@@ -8,7 +8,7 @@ abbrev ControlFlow := core_models.ops.control_flow.ControlFlow
 
 namespace Result
 
-def ok {α : Type} (v : α) : Result α := .ok v
+def ok {α : Type} (v : α) : Result α := RustM.ok v
 
 end Result
 
@@ -22,7 +22,6 @@ abbrev U64 := UInt64
 scoped notation:max n "#usize" => (USize64.ofNat n)
 scoped notation:max n "#u64" => (UInt64.ofNat n)
 
--- Checked arithmetic returning Result
 instance : HMul Usize Usize (Result Usize) where
   hMul x y := x *? y
 
@@ -35,11 +34,9 @@ instance : HMul U64 U64 (Result U64) where
 instance : HAdd U64 U64 (Result U64) where
   hAdd x y := x +? y
 
--- LT / DecidableLT for Usize (comparison used in if-conditions)
 instance : LT Usize := inferInstanceAs (LT USize64)
 instance : DecidableLT Usize := inferInstanceAs (DecidableLT USize64)
 
--- XOR for U64 (pure, already available on UInt64)
 instance : HXor U64 U64 U64 := inferInstanceAs (HXor UInt64 UInt64 UInt64)
 
 abbrev Array (α : Type) (n : Usize) := RustArray α n
@@ -47,7 +44,7 @@ abbrev Slice (α : Type) := RustSlice α
 
 def Array.index_usize {α : Type} {n : Usize} (a : Array α n) (i : Usize) : Result α :=
   if h : i.toNat < a.toVec.size then
-    .ok (a.toVec.get i.toNat h)
+    .ok (a.toVec.get ⟨i.toNat, h⟩)
   else
     .fail .arrayOutOfBounds
 
@@ -58,7 +55,7 @@ def Array.update {α : Type} {n : Usize} (a : Array α n) (i : Usize) (v : α) :
     .fail .arrayOutOfBounds
 
 def Array.make (n : Usize) (l : List α) : Array α n :=
-  .ofVec (Vector.ofArray ⟨l⟩ |>.cast (by sorry))
+  .ofVec (Vector.mk ⟨l⟩ sorry)
 
 def Array.repeat (n : Usize) (v : α) : Array α n :=
   .ofVec (Vector.replicate n.toNat v)
@@ -105,3 +102,19 @@ structure Index (Self : Type) (Idx : Type) (Output : Type) where
 end core.ops.index
 
 end Aeneas
+
+namespace ControlFlow
+
+def dummy : Nat := sorry
+
+end ControlFlow
+
+
+register_option linter.dupNamespace : Bool := {
+  defValue := false
+  descr    := "Dummy option"
+}
+register_option linter.hashCommand : Bool := {
+  defValue := false
+  descr    := "Dummy option"
+}
