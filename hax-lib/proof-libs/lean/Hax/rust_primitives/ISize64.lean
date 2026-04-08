@@ -1268,3 +1268,117 @@ instance : IsCharP ISize64 (2 ^ 64) := IsCharP.mk' _ _
 instance : ToInt.Pow ISize64 (.sint 64) := ToInt.pow_of_semiring (by simp)
 
 end Lean.Grind
+
+
+/-!
+## Simp-Procs
+
+Grind and simp use some simplification procedures for signed ints. They are defined in
+`Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt` and replicated here for `ISize64`.
+-/
+
+namespace ISize64
+open Lean Meta Simp
+
+-- Adapted from `Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt`
+-- The builtin macro uses `builtin_dsimproc`; we use `dsimproc` since ISize64 is not a built-in type.
+
+instance : ToExpr ISize64 where
+  toTypeExpr := mkConst ``ISize64
+  toExpr a :=
+    if a.toInt ≥ 0 then
+      let r := mkRawNatLit a.toNatClampNeg
+      mkApp3 (.const ``OfNat.ofNat [0]) (mkConst ``ISize64) r
+        (.app (.const ``ISize64.instOfNat []) r)
+    else
+      let r := mkRawNatLit (-a).toNatClampNeg
+      mkApp2 (.const ``Neg.neg [0])
+        (mkConst ``ISize64)
+        (mkApp3 (.const ``OfNat.ofNat [0]) (mkConst ``ISize64) r
+          (.app (.const ``ISize64.instOfNat []) r))
+
+def fromExpr (e : Expr) : SimpM (Option ISize64) := do
+  if let some (n, _) ← getOfNatValue? e `ISize64 then
+    return some (ISize64.ofNat n)
+  let_expr Neg.neg _ _ a ← e | return none
+  let some (n, _) ← getOfNatValue? a `ISize64 | return none
+  return some (ISize64.ofInt (- n))
+
+@[inline] def reduceBin (declName : Name) (arity : Nat) (op : ISize64 → ISize64 → ISize64) (e : Expr) : SimpM DStep := do
+  unless e.isAppOfArity declName arity do return .continue
+  let some n ← (fromExpr e.appFn!.appArg!) | return .continue
+  let some m ← (fromExpr e.appArg!) | return .continue
+  return .done <| toExpr (op n m)
+
+@[inline] def reduceBinPred (declName : Name) (arity : Nat) (op : ISize64 → ISize64 → Bool) (e : Expr) : SimpM Step := do
+  unless e.isAppOfArity declName arity do return .continue
+  let some n ← (fromExpr e.appFn!.appArg!) | return .continue
+  let some m ← (fromExpr e.appArg!) | return .continue
+  evalPropStep e (op n m)
+
+@[inline] def reduceBoolPred (declName : Name) (arity : Nat) (op : ISize64 → ISize64 → Bool) (e : Expr) : SimpM DStep := do
+  unless e.isAppOfArity declName arity do return .continue
+  let some n ← (fromExpr e.appFn!.appArg!) | return .continue
+  let some m ← (fromExpr e.appArg!) | return .continue
+  return .done <| toExpr (op n m)
+
+dsimproc [simp, seval] reduceNeg ((- _ : ISize64)) := fun e => do
+  let_expr Neg.neg _ _ arg ← e | return .continue
+  if arg.isAppOfArity ``OfNat.ofNat 3 then
+    -- We return .done to ensure `Neg.neg` is not unfolded even when `ground := true`.
+    return .done e
+  else
+    let some v ← (fromExpr arg) | return .continue
+    return .done <| toExpr (- v)
+
+dsimproc [simp, seval] reduceAdd ((_ + _ : ISize64)) := reduceBin ``HAdd.hAdd 6 (· + ·)
+dsimproc [simp, seval] reduceMul ((_ * _ : ISize64)) := reduceBin ``HMul.hMul 6 (· * ·)
+dsimproc [simp, seval] reduceSub ((_ - _ : ISize64)) := reduceBin ``HSub.hSub 6 (· - ·)
+dsimproc [simp, seval] reduceDiv ((_ / _ : ISize64)) := reduceBin ``HDiv.hDiv 6 (· / ·)
+dsimproc [simp, seval] reduceMod ((_ % _ : ISize64)) := reduceBin ``HMod.hMod 6 (· % ·)
+
+simproc [simp, seval] reduceLT  (( _ : ISize64) < _)  := reduceBinPred ``LT.lt 4 (. < .)
+simproc [simp, seval] reduceLE  (( _ : ISize64) ≤ _)  := reduceBinPred ``LE.le 4 (. ≤ .)
+simproc [simp, seval] reduceGT  (( _ : ISize64) > _)  := reduceBinPred ``GT.gt 4 (. > .)
+simproc [simp, seval] reduceGE  (( _ : ISize64) ≥ _)  := reduceBinPred ``GE.ge 4 (. ≥ .)
+simproc [simp, seval] reduceEq  (( _ : ISize64) = _)  := reduceBinPred ``Eq 3 (. = .)
+simproc [simp, seval] reduceNe  (( _ : ISize64) ≠ _)  := reduceBinPred ``Ne 3 (. ≠ .)
+dsimproc [simp, seval] reduceBEq  (( _ : ISize64) == _)  := reduceBoolPred ``BEq.beq 4 (. == .)
+dsimproc [simp, seval] reduceBNe  (( _ : ISize64) != _)  := reduceBoolPred ``bne 4 (. != .)
+
+dsimproc [simp, seval] reduceOfIntLE (ISize64.ofIntLE _ _ _) := fun e => do
+  unless e.isAppOfArity `ISize64.ofIntLE 3 do return .continue
+  let some value ← Int.fromExpr? e.appFn!.appFn!.appArg! | return .continue
+  let value := ISize64.ofInt value
+  return .done <| toExpr value
+
+dsimproc [simp, seval] reduceOfNat (ISize64.ofNat _) := fun e => do
+  unless e.isAppOfArity `ISize64.ofNat 1 do return .continue
+  let some value ← Nat.fromExpr? e.appArg! | return .continue
+  let value := ISize64.ofNat value
+  return .done <| toExpr value
+
+dsimproc [simp, seval] reduceOfInt (ISize64.ofInt _) := fun e => do
+  unless e.isAppOfArity `ISize64.ofInt 1 do return .continue
+  let some value ← Int.fromExpr? e.appArg! | return .continue
+  let value := ISize64.ofInt value
+  return .done <| toExpr value
+
+dsimproc [simp, seval] reduceToInt (ISize64.toInt _) := fun e => do
+  unless e.isAppOfArity `ISize64.toInt 1 do return .continue
+  let some v ← (fromExpr e.appArg!) | return .continue
+  let n := ISize64.toInt v
+  return .done <| toExpr n
+
+dsimproc [simp, seval] reduceToNatClampNeg (ISize64.toNatClampNeg _) := fun e => do
+  unless e.isAppOfArity `ISize64.toNatClampNeg 1 do return .continue
+  let some v ← (fromExpr e.appArg!) | return .continue
+  let n := ISize64.toNatClampNeg v
+  return .done <| toExpr n
+
+/-- Return `.done` for ISize64 values. We don't want to unfold in the symbolic evaluator. -/
+dsimproc [seval] isValue ((OfNat.ofNat _ : ISize64)) := fun e => do
+  unless (e.isAppOfArity ``OfNat.ofNat 3) do return .continue
+  return .done e
+
+end ISize64
