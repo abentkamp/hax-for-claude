@@ -1163,3 +1163,108 @@ theorem ISize64.ofNat_mod {a b : Nat} (ha : a < 2 ^ 63) (hb : b < 2 ^ 63) :
   rw [← ofInt_eq_ofNat, ← ofInt_eq_ofNat, ← ofInt_eq_ofNat, Int.ofNat_tmod,
     ofInt_tmod (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)
       (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)]
+
+/-!
+## Grind's ToInt
+
+For grind to use integer arithmetic on `ISize64`, we need the following instances, inspired by
+the modules `Init.GrindInstances.ToInt` and `Init.GrindInstances.Ring.SInt`.
+-/
+
+namespace Lean.Grind
+
+instance : ToInt ISize64 (.sint 64) where
+  toInt x := x.toInt
+  toInt_inj x y w := private ISize64.toInt_inj.mp w
+  toInt_mem x := by simp; exact ⟨ISize64.le_toInt x, ISize64.toInt_lt x⟩
+
+@[simp] theorem toInt_isize64 (x : ISize64) : ToInt.toInt x = (x.toInt : Int) := rfl
+
+instance : ToInt.Zero ISize64 (.sint 64) where
+  toInt_zero := by
+    change (0 : ISize64).toInt = _
+    rw [ISize64.toInt_zero]
+
+instance : ToInt.OfNat ISize64 (.sint 64) where
+  toInt_ofNat x := by
+    rw [toInt_isize64, ISize64.toInt_ofNat, ISize64.size, Int64.size,
+      Int.bmod_eq_emod, IntInterval.wrap]
+    simp
+    split <;> omega
+
+instance : ToInt.Add ISize64 (.sint 64) where
+  toInt_add x y := by
+    simp [Int.bmod_eq_emod]
+    split <;> · simp; omega
+
+instance : ToInt.Mul ISize64 (.sint 64) where
+  toInt_mul x y := by
+    simp [Int.bmod_eq_emod]
+    split <;> · simp; omega
+
+instance : ToInt.LE ISize64 (.sint 64) where
+  le_iff x y := by simpa using ISize64.le_iff_toInt_le
+
+instance : ToInt.LT ISize64 (.sint 64) where
+  lt_iff x y := by simpa using ISize64.lt_iff_toInt_lt
+
+/-!
+### Ring structure
+
+From `Init.GrindInstances.Ring.SInt`.
+-/
+
+@[expose, instance_reducible]
+def ISize64.natCast : NatCast ISize64 where
+  natCast x := ISize64.ofNat x
+
+@[expose, instance_reducible]
+def ISize64.intCast : IntCast ISize64 where
+  intCast x := ISize64.ofInt x
+
+attribute [local instance] ISize64.intCast in
+theorem ISize64.intCast_neg (i : Int) : ((-i : Int) : ISize64) = -(i : ISize64) :=
+  ISize64.ofInt_neg _
+
+attribute [local instance] ISize64.intCast in
+theorem ISize64.intCast_ofNat (x : Nat) : (OfNat.ofNat (α := Int) x : ISize64) = OfNat.ofNat x :=
+  ISize64.ofInt_eq_ofNat
+
+attribute [local instance] ISize64.natCast ISize64.intCast in
+instance : CommRing ISize64 where
+  nsmul := ⟨(· * ·)⟩
+  zsmul := ⟨(· * ·)⟩
+  add_assoc := ISize64.add_assoc
+  add_comm := ISize64.add_comm
+  add_zero := ISize64.add_zero
+  neg_add_cancel := ISize64.add_left_neg
+  mul_assoc := ISize64.mul_assoc
+  mul_comm := ISize64.mul_comm
+  mul_one := ISize64.mul_one
+  one_mul := ISize64.one_mul
+  left_distrib _ _ _ := ISize64.mul_add
+  right_distrib _ _ _ := ISize64.add_mul
+  zero_mul _ := ISize64.zero_mul
+  mul_zero _ := ISize64.mul_zero
+  sub_eq_add_neg := ISize64.sub_eq_add_neg
+  pow_zero := ISize64.pow_zero
+  pow_succ := ISize64.pow_succ
+  ofNat_succ x := ISize64.ofNat_add x 1
+  intCast_neg := ISize64.ofInt_neg
+  neg_zsmul i x := by
+    change (-i : Int) * x = - (i * x)
+    simp [ISize64.intCast_neg, ISize64.neg_mul]
+  zsmul_natCast_eq_nsmul n a := congrArg (· * a) (ISize64.intCast_ofNat _)
+
+instance : IsCharP ISize64 (2 ^ 64) := IsCharP.mk' _ _
+  (ofNat_eq_zero_iff := fun x => by
+    have : OfNat.ofNat x = ISize64.ofInt x := rfl
+    rw [this]
+    simp only [ISize64.ofInt_eq_iff_bmod_eq_toInt, ISize64.toInt_zero]
+    constructor
+    · intro h; rw [← Nat.dvd_iff_mod_eq_zero]; exact Int.ofNat_dvd_right.mp (Int.dvd_of_bmod_eq_zero h)
+    · intro h; exact Int.bmod_eq_zero_of_dvd (Int.ofNat_dvd_right.mpr (Nat.dvd_iff_mod_eq_zero.mpr h)))
+
+instance : ToInt.Pow ISize64 (.sint 64) := ToInt.pow_of_semiring (by simp)
+
+end Lean.Grind
