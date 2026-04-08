@@ -6,8 +6,8 @@ Init/Data/SInt/Lemmas.lean.
 Strategy:
   1. Skip the preamble of the source file (copyright, imports, macro definition,
      and the declare_int_theorems invocations for the built-in types).
-  2. Split the remaining content into blocks (groups of consecutive non-blank lines).
-  3. Keep every block that mentions "Int64" or "UInt64" – these are the
+  2. Split the remaining content into items, each starting at an unindented line.
+  3. Keep every item that mentions "Int64" or "UInt64" – these are the
      explicitly written Int64-specific theorems.
   4. Apply text substitutions to rename everything to 128-bit variants.
   5. Prepend the hard-coded header (imports + declare_int_theorems Int128 128).
@@ -84,25 +84,35 @@ def find_body_start(lines: list[str]) -> int:
     return last_idx + 1
 
 
-def split_into_blocks(lines: list[str]) -> list[str | None]:
+def split_into_items(lines: list[str]) -> list[str]:
     """
-    Split lines into a list where:
-      - str entries are non-empty blocks (consecutive non-blank lines joined)
-      - None entries represent blank-line separators
+    Split lines into top-level items.  Each item starts at an unindented
+    (column-0) non-blank line and continues until the next such line or a
+    blank line that precedes one.  This correctly handles:
+      - multi-line proofs (indented continuation lines stay with their item)
+      - adjacent theorems with no blank line between them
     """
-    blocks: list[str | None] = []
+    items: list[str] = []
     current: list[str] = []
     for line in lines:
         if line.strip() == "":
+            # Blank line ends the current item (if any).
             if current:
-                blocks.append("\n".join(current))
+                items.append("\n".join(current))
                 current = []
-            blocks.append(None)
+        elif line[0] != " " and line[0] != "\t":
+            # Unindented non-blank line: starts a new item.
+            if current:
+                items.append("\n".join(current))
+            current = [line]
         else:
-            current.append(line)
+            # Indented line: continuation of the current item.
+            if current:
+                current.append(line)
+            # Indented lines before any item (shouldn't happen) are dropped.
     if current:
-        blocks.append("\n".join(current))
-    return blocks
+        items.append("\n".join(current))
+    return items
 
 
 def main() -> None:
@@ -120,11 +130,11 @@ def main() -> None:
     body_start = find_body_start(raw_lines)
     body_lines = raw_lines[body_start:]
 
-    # Collect kept blocks
+    # Collect kept items
     kept: list[str] = []
-    for block in split_into_blocks(body_lines):
-        if block is not None and should_keep(block):
-            kept.append(apply_substitutions(block))
+    for item in split_into_items(body_lines):
+        if should_keep(item):
+            kept.append(apply_substitutions(item))
 
     # Assemble output: header, then one blank line between each kept block
     output = HEADER + "\n\n" + "\n\n".join(kept) + "\n"
