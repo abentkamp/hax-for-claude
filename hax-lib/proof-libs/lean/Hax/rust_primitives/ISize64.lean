@@ -10,7 +10,19 @@ This file aims to collect all definitions, lemmas, and type class instances abou
 Lean's standard library and to state them for `ISize64`.
 
 The regular `ISize` type does not work for us because of https://github.com/cryspen/hax/issues/1702.
+
+## Source references
+
+All definitions, lemmas, instances, and simp procedures in this file are adapted from the
+following files in the Lean v4.29.0-rc1 source code:
+- `Init/Data/SInt/Basic.lean` (structure, basic defs, arithmetic, conversions)
+- `Init/Data/SInt/Lemmas.lean` (all lemmas and instances)
+- `Init/GrindInstances/ToInt.lean` (Grind ToInt instances)
+- `Init/GrindInstances/Ring/SInt.lean` (CommRing, IsCharP, ToInt.Pow)
+- `Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean` (simp procedures)
 -/
+
+-- Adapted from Init/Data/SInt/Basic.lean (Lean v4.29.0-rc1)
 
 /-- A copy of `Int64`, which we use to represent Rust's `isize` type. -/
 structure ISize64 where ofBitVec :: toBitVec : BitVec 64
@@ -203,6 +215,8 @@ def USize64.toISize64 (a : USize64) : ISize64 := ⟨a.toBitVec⟩
 
 /-!
 ## Theorems from `declare_int_theorems`
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), line 31–61.
 -/
 
 open Std Lean in
@@ -211,6 +225,8 @@ declare_int_theorems ISize64 64
 
 /-!
 ## Lemmas from `Init.Data.SInt.Lemmas` (up to line 725)
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 75–725.
 -/
 
 theorem ISize64.toInt.inj {x y : ISize64} (h : x.toInt = y.toInt) : x = y :=
@@ -372,6 +388,8 @@ theorem ISize64.ofInt_eq_iff_bmod_eq_toInt (a : Int) (b : ISize64) :
 
 /-!
 ## More lemmas from `Init.Data.SInt.Lemmas` (lines 725–1000)
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 725–1000.
 -/
 
 -- Cross-type toInt lemmas needed below
@@ -456,6 +474,8 @@ theorem ISize64.ofNat_int32ToNatClampNeg (x : Int32) (hx : 0 ≤ x) : ISize64.of
 
 /-!
 ## More lemmas from `Init.Data.SInt.Lemmas` (lines 1000–1840)
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 1000–1840.
 -/
 
 theorem ISize64.toBitVec_ofIntTruncate {n : Int} (h₁ : ISize64.minValue.toInt ≤ n) (h₂ : n ≤ ISize64.maxValue.toInt) :
@@ -645,7 +665,10 @@ protected theorem ISize64.sub_eq_add_neg (a b : ISize64) : a - b = a + -b :=
   rw [← toInt_toBitVec, ISize64.toBitVec_mod, BitVec.toInt_srem, toInt_toBitVec, toInt_toBitVec]
 
 /-!
-## Lemmas from `Init.Data.SInt.Lemmas` (lines 1838–2600): subtraction, ofInt arithmetic, order, algebra
+## Lemmas from `Init.Data.SInt.Lemmas` (lines 1838–2600)
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 1838–2600.
+Subtraction, ofInt arithmetic, order, algebra.
 -/
 
 @[simp] theorem ISize64.toInt_sub (a b : ISize64) :
@@ -720,6 +743,8 @@ theorem ISize64.ofIntLE_mul {a b : Int} {hab₁ hab₂} :
 
 /-!
 ### Algebraic lemmas
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 2345–2600.
 -/
 
 protected theorem ISize64.add_assoc (a b c : ISize64) : a + b + c = a + (b + c) :=
@@ -854,6 +879,8 @@ theorem ISize64.neg_eq_neg_one_mul (a : ISize64) : -a = -1 * a := by
 
 /-!
 ### Order properties
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 2783–3077.
 -/
 
 protected theorem ISize64.le_of_lt {a b : ISize64} : a < b → a ≤ b := by
@@ -946,7 +973,9 @@ theorem ISize64.toInt_eq_toNatClampNeg {a : ISize64} (ha : 0 ≤ a) :
   rw [cast_toNatClampNeg _ ha]
 
 /-!
-## Missing UInt64-related cross-conversion lemmas (up to line 1840)
+## UInt64-related cross-conversion lemmas
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), various lines up to 1840.
 -/
 
 @[simp] theorem ISize64.ofBitVec_uInt64ToBitVec (x : UInt64) :
@@ -988,7 +1017,9 @@ theorem ISize64.toNat_toUInt64_of_le {x : ISize64} (hx : 0 ≤ x) :
     toUInt64 (OfNat.ofNat n) = OfNat.ofNat n := (rfl)
 
 /-!
-## Missing items from lines 1840–2600
+## Additional items from lines 1840–2600
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 1840–2600.
 -/
 
 instance : Std.LawfulIdentity (α := ISize64) (· + ·) 0 where
@@ -1068,7 +1099,9 @@ theorem ISize64.ofNat_div {a b : Nat} (ha : a < 2 ^ 63) (hb : b < 2 ^ 63) :
       (by rw [toInt_minValue]; omega) (by rw [toInt_maxValue]; omega)]
 
 /-!
-## Remaining items from lines 2600–3492 (end of file)
+## Remaining items from lines 2600–3492
+
+Adapted from Init/Data/SInt/Lemmas.lean (Lean v4.29.0-rc1), lines 2600–3492 (end of file).
 -/
 
 instance : Std.LawfulCommIdentity (α := ISize64) (· * ·) 1 where
@@ -1167,8 +1200,9 @@ theorem ISize64.ofNat_mod {a b : Nat} (ha : a < 2 ^ 63) (hb : b < 2 ^ 63) :
 /-!
 ## Grind's ToInt
 
-For grind to use integer arithmetic on `ISize64`, we need the following instances, inspired by
-the modules `Init.GrindInstances.ToInt` and `Init.GrindInstances.Ring.SInt`.
+For grind to use integer arithmetic on `ISize64`, we need the following instances.
+
+Adapted from Init/GrindInstances/ToInt.lean (Lean v4.29.0-rc1), lines 445–481.
 -/
 
 namespace Lean.Grind
@@ -1211,7 +1245,7 @@ instance : ToInt.LT ISize64 (.sint 64) where
 /-!
 ### Ring structure
 
-From `Init.GrindInstances.Ring.SInt`.
+Adapted from Init/GrindInstances/Ring/SInt.lean (Lean v4.29.0-rc1), lines 189–241.
 -/
 
 @[expose, instance_reducible]
@@ -1273,15 +1307,13 @@ end Lean.Grind
 /-!
 ## Simp-Procs
 
-Grind and simp use some simplification procedures for signed ints. They are defined in
-`Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt` and replicated here for `ISize64`.
+Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean (Lean v4.29.0-rc1), lines 16–111.
+The builtin macro uses `builtin_dsimproc`/`builtin_simproc`; we use `dsimproc`/`simproc`
+since ISize64 is not a built-in type.
 -/
 
 namespace ISize64
 open Lean Meta Simp
-
--- Adapted from `Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt`
--- The builtin macro uses `builtin_dsimproc`; we use `dsimproc` since ISize64 is not a built-in type.
 
 instance : ToExpr ISize64 where
   toTypeExpr := mkConst ``ISize64
