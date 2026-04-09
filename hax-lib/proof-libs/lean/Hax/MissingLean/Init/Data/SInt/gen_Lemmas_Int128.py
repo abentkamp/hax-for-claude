@@ -1,33 +1,35 @@
 #!/usr/bin/env python3
 """
-Generate an approximation of Lemmas_Int128.lean from Lean4's
-Init/Data/SInt/Lemmas.lean.
+Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
+
+Supports two modes:
+  --mode lemmas  (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
+  --mode basic             Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
 
 Strategy:
-  1. Skip the preamble of the source file (copyright, imports, macro definition,
-     and the declare_int_theorems invocations for the built-in types).
-  2. Split the remaining content into items, each starting at an unindented line.
-  3. Keep every item that mentions "Int64" or "UInt64" – these are the
-     explicitly written Int64-specific theorems.
-  4. Drop items that involve ISize↔Int64 *conversions* (not just bound
-     comparisons), because Int128.toISize and ISize.toInt128 don't exist.
-  5. Apply text substitutions to rename everything to 128-bit variants.
-  5. Prepend the hard-coded header (imports + declare_int_theorems Int128 128).
+  1. Split the source file into items, each starting at an unindented line.
+  2. Keep every item that:
+       a. mentions "Int64" or "UInt64" (is Int64-specific), and
+       b. is a Lean declaration (not a doc comment or bare text), and
+       c. does not involve an ISize↔Int64 conversion, and
+       d. does not reference typeclasses unavailable for Int128.
+  3. Apply text substitutions to rename everything to 128-bit variants.
+  4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py <path/to/Init/Data/SInt/Lemmas.lean> [output]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
 
+import argparse
 import re
-import sys
 
 # ---------------------------------------------------------------------------
-# Fixed header for the generated file
+# Fixed headers for the generated files
 # ---------------------------------------------------------------------------
 
-HEADER = """\
+LEMMAS_HEADER = """\
 import Hax.MissingLean.Init.Data.SInt.Basic_Int128
 import Hax.MissingLean.Init.Data.UInt.Lemmas_UInt128
 import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.SInt
@@ -41,6 +43,14 @@ import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.UInt
 set_option maxRecDepth 4000
 
 declare_int_theorems Int128 128"""
+
+BASIC_HEADER = """\
+import Hax.MissingLean.Init.Prelude
+import Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt
+
+set_option autoImplicit true
+
+-- Adapted from Init/Data/SInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
 
 # ---------------------------------------------------------------------------
 # Substitution rules
@@ -60,6 +70,7 @@ LITERAL_SUBS = [
     ("BitVec 64", "BitVec 128"),
     # Bit-width literals that appear explicitly in Int64 theorems:
     ("signExtend 64",  "signExtend 128"),
+    ("smod 64",        "smod 128"),       # shiftLeft/shiftRight clamp the shift amount
     ("BitVec.ofInt 64", "BitVec.ofInt 128"),
     ("#64", "#128"),
     ("ofNat 64", "ofNat 128"),  # rare but possible
@@ -92,6 +103,23 @@ def apply_substitutions(text: str) -> str:
 def should_keep(item: str) -> bool:
     """Keep an item if it is specific to Int64 or UInt64."""
     return "Int64" in item or "UInt64" in item
+
+
+# Keywords that begin a Lean declaration.  Items whose first line does not
+# start with one of these are bare text (doc comment content, copyright
+# lines, macro invocations such as "declare_int_theorems Int64 64", etc.)
+# and should be dropped.
+LEAN_DECL_PREFIXES = (
+    "def ", "abbrev ", "protected ", "private ", "@[",
+    "theorem ", "lemma ", "instance ", "attribute ",
+    "structure ", "class ", "set_option ",
+)
+
+
+def is_lean_declaration(item: str) -> bool:
+    """Return True if the item starts with a Lean declaration keyword."""
+    first_line = item.split("\n")[0]
+    return any(first_line.startswith(p) for p in LEAN_DECL_PREFIXES)
 
 
 # Patterns in the ORIGINAL (pre-substitution) source text that indicate an
@@ -130,20 +158,6 @@ def uses_unavailable_typeclass(item: str) -> bool:
     return "IsLinearOrder" in item or "LawfulOrderLT" in item
 
 
-def find_body_start(lines: list[str]) -> int:
-    """
-    Return the index of the first line after the last declare_int_theorems
-    invocation in the file.  Everything before that index belongs to the
-    preamble (copyright, imports, macro definition, and the invocations for
-    the built-in Int8/Int16/Int32/Int64/ISize types).
-    """
-    last_idx = 0
-    for i, line in enumerate(lines):
-        if line.strip().startswith("declare_int_theorems"):
-            last_idx = i
-    return last_idx + 1
-
-
 def split_into_items(lines: list[str]) -> list[str]:
     """
     Split lines into top-level items.  Each item starts at an unindented
@@ -176,33 +190,41 @@ def split_into_items(lines: list[str]) -> list[str]:
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <Lemmas.lean> [output]", file=sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Generate Int128 Lean files from Lean4 Init/Data/SInt sources."
+    )
+    parser.add_argument("input", help="Path to the Lean4 source file")
+    parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
+    parser.add_argument(
+        "--mode",
+        choices=["lemmas", "basic"],
+        default="lemmas",
+        help="lemmas: generate Lemmas_Int128.lean (default); basic: generate Basic_Int128.lean",
+    )
+    args = parser.parse_args()
 
-    input_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else None
-
-    with open(input_path, encoding="utf-8") as f:
+    with open(args.input, encoding="utf-8") as f:
         raw_lines = [line.rstrip("\n") for line in f]
 
-    # Skip preamble; only process the theorem definitions
-    body_start = find_body_start(raw_lines)
-    body_lines = raw_lines[body_start:]
+    header = LEMMAS_HEADER if args.mode == "lemmas" else BASIC_HEADER
 
     # Collect kept items
     kept: list[str] = []
-    for item in split_into_items(body_lines):
-        if should_keep(item) and not is_isize_conversion(item) and not uses_unavailable_typeclass(item):
+    for item in split_into_items(raw_lines):
+        if (should_keep(item)
+                and is_lean_declaration(item)
+                and not is_isize_conversion(item)
+                and not uses_unavailable_typeclass(item)):
             kept.append(apply_substitutions(item))
 
     # Assemble output: header, then one blank line between each kept block
-    output = HEADER + "\n\n" + "\n\n".join(kept) + "\n"
+    output = header + "\n\n" + "\n\n".join(kept) + "\n"
 
-    if output_path:
-        with open(output_path, "w", encoding="utf-8") as f:
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
             f.write(output)
-        print(f"Written to {output_path}", file=sys.stderr)
+        import sys
+        print(f"Written to {args.output}", file=sys.stderr)
     else:
         print(output, end="")
 
