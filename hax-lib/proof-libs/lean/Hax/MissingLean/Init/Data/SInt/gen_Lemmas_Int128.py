@@ -2,9 +2,10 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports two modes:
+Supports three modes:
   --mode lemmas  (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic             Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
+  --mode toexpr            Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -17,7 +18,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -51,6 +52,15 @@ import Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt
 set_option autoImplicit true
 
 -- Adapted from Init/Data/SInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
+
+TOEXPR_HEADER = """\
+import Lean
+import Hax.MissingLean.Init.Data.UInt.Basic
+import Hax.MissingLean.Init.Data.SInt.Basic_Int128
+
+-- Adapted from Lean/ToExpr.lean from the Lean v4.29.0-rc1 source code
+
+open Lean"""
 
 # ---------------------------------------------------------------------------
 # Substitution rules
@@ -175,10 +185,15 @@ def split_into_items(lines: list[str]) -> list[str]:
                 items.append("\n".join(current))
                 current = []
         elif line[0] != " " and line[0] != "\t":
-            # Unindented non-blank line: starts a new item.
-            if current:
-                items.append("\n".join(current))
-            current = [line]
+            # Unindented non-blank line: starts a new item, UNLESS it is a
+            # bare "where" which is a continuation clause of the preceding
+            # declaration in Lean syntax.
+            if line.rstrip() == "where" and current:
+                current.append(line)
+            else:
+                if current:
+                    items.append("\n".join(current))
+                current = [line]
         else:
             # Indented line: continuation of the current item.
             if current:
@@ -197,16 +212,20 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic"],
+        choices=["lemmas", "basic", "toexpr"],
         default="lemmas",
-        help="lemmas: generate Lemmas_Int128.lean (default); basic: generate Basic_Int128.lean",
+        help=(
+            "lemmas: generate Lemmas_Int128.lean (default); "
+            "basic: generate Basic_Int128.lean; "
+            "toexpr: generate Lean/ToExpr.lean"
+        ),
     )
     args = parser.parse_args()
 
     with open(args.input, encoding="utf-8") as f:
         raw_lines = [line.rstrip("\n") for line in f]
 
-    header = LEMMAS_HEADER if args.mode == "lemmas" else BASIC_HEADER
+    header = {"lemmas": LEMMAS_HEADER, "basic": BASIC_HEADER, "toexpr": TOEXPR_HEADER}[args.mode]
 
     # Collect kept items
     kept: list[str] = []
