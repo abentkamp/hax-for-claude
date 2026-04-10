@@ -2,10 +2,11 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports three modes:
+Supports four modes:
   --mode lemmas  (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic             Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr            Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
+  --mode sint              Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -18,7 +19,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -61,6 +62,46 @@ import Hax.MissingLean.Init.Data.SInt.Basic_Int128
 -- Adapted from Lean/ToExpr.lean from the Lean v4.29.0-rc1 source code
 
 open Lean"""
+
+SINT_HEADER = """\
+import Lean
+import Hax.MissingLean.Lean.ToExpr
+
+-- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean from the Lean v4.29.0-rc1 source code
+
+open Lean Meta Simp"""
+
+# ---------------------------------------------------------------------------
+# Sint mode: substitutions applied to the extracted macro body.
+# The upstream macro uses builtin_dsimproc/builtin_simproc (for types built
+# into the Lean kernel); Int128 is not built-in, so we use dsimproc/simproc.
+# We also rename the macro to avoid clashing with the upstream definition.
+# ---------------------------------------------------------------------------
+
+SINT_SUBS = [
+    ("builtin_dsimproc",        "dsimproc"),
+    ("builtin_simproc",         "simproc"),
+    ('"declare_sint_simprocs"', '"declare_sint_simprocs_ext"'),
+]
+
+
+def extract_sint_macro(lines: list[str]) -> list[str]:
+    """
+    Extract the declare_sint_simprocs macro definition from the upstream file,
+    stopping just before the first invocation (declare_sint_simprocs Int8/16/…).
+    """
+    in_macro = False
+    result = []
+    for line in lines:
+        if not in_macro:
+            if line.startswith('macro "declare_sint_simprocs"'):
+                in_macro = True
+                result.append(line)
+        else:
+            if line.startswith("declare_sint_simprocs "):
+                break  # first invocation — stop here
+            result.append(line)
+    return result
 
 # ---------------------------------------------------------------------------
 # Substitution rules
@@ -212,12 +253,13 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr"],
+        choices=["lemmas", "basic", "toexpr", "sint"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
             "basic: generate Basic_Int128.lean; "
-            "toexpr: generate Lean/ToExpr.lean"
+            "toexpr: generate Lean/ToExpr.lean; "
+            "sint: generate BuiltinSimpProcs/SInt.lean"
         ),
     )
     args = parser.parse_args()
@@ -225,19 +267,26 @@ def main() -> None:
     with open(args.input, encoding="utf-8") as f:
         raw_lines = [line.rstrip("\n") for line in f]
 
-    header = {"lemmas": LEMMAS_HEADER, "basic": BASIC_HEADER, "toexpr": TOEXPR_HEADER}[args.mode]
+    if args.mode == "sint":
+        macro_lines = extract_sint_macro(raw_lines)
+        macro_text = "\n".join(macro_lines)
+        for old, new in SINT_SUBS:
+            macro_text = macro_text.replace(old, new)
+        output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
+    else:
+        header = {"lemmas": LEMMAS_HEADER, "basic": BASIC_HEADER, "toexpr": TOEXPR_HEADER}[args.mode]
 
-    # Collect kept items
-    kept: list[str] = []
-    for item in split_into_items(raw_lines):
-        if (should_keep(item)
-                and is_lean_declaration(item)
-                and not is_isize_conversion(item)
-                and not uses_unavailable_typeclass(item)):
-            kept.append(apply_substitutions(item))
+        # Collect kept items
+        kept: list[str] = []
+        for item in split_into_items(raw_lines):
+            if (should_keep(item)
+                    and is_lean_declaration(item)
+                    and not is_isize_conversion(item)
+                    and not uses_unavailable_typeclass(item)):
+                kept.append(apply_substitutions(item))
 
-    # Assemble output: header, then one blank line between each kept block
-    output = header + "\n\n" + "\n\n".join(kept) + "\n"
+        # Assemble output: header, then one blank line between each kept block
+        output = header + "\n\n" + "\n\n".join(kept) + "\n"
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
