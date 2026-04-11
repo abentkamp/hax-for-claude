@@ -24,6 +24,72 @@ Usage:
 If no output path is given the result is printed to stdout.
 """
 
+# ---------------------------------------------------------------------------
+# Known shortcomings and residual issues requiring manual post-processing
+# ---------------------------------------------------------------------------
+#
+# --mode basic (Init/Data/SInt/Basic.lean → Basic_Int128.lean)
+# ─────────────────────────────────────────────────────────────
+# 1. Circular size abbrev.
+#    Source: abbrev Int64.size : Nat := 18446744073709551616
+#    Generated: abbrev Int128.size : Nat := Int128.size   ← circular
+#    Reason: LITERAL_SUBS renames Int64→Int128 first, then the literal
+#            18446744073709551616 → Int128.size, so the RHS references the
+#            name being defined.
+#    Fix: replace with the literal value 340282366920938463463374607431768211456
+#
+# 2. Wrong maxValue / minValue literals.
+#    Source contains Int64's evaluated bounds (9223372036854775807 and
+#    -9223372036854775808); these numeric literals are not matched by any
+#    substitution rule.
+#    Fix: replace with the correct Int128 bounds
+#         (170141183460469231731687303715884105727 and
+#          -170141183460469231731687303715884105728).
+#
+# 3. Hashable Int128: wrong hash return type.
+#    Source: hash i := i.toUInt64   →   generated: hash i := i.toUInt128
+#    Hashable.hash must return UInt64, not UInt128.
+#    Fix: hash i := UInt64.ofInt i.toInt
+#
+# 4. Spurious Hashable Int8/Int16/Int32/ISize instances.
+#    These instances in the source implement Hashable by calling .toUInt64,
+#    so they contain "UInt64" and pass should_keep.  After renaming they
+#    reference .toUInt128 (wrong return type) and are not about Int128 at all.
+#    Fix: delete all four instances.
+#
+# 5. Missing Int128.toInt64 and Int64.toInt128 conversions.
+#    No integer type larger than Int64 appears in Basic.lean, so there is
+#    nothing to rename into these functions.
+#    Fix: add both definitions manually.
+#
+# 6. Structure field doc comment not updated.
+#    The toUInt128 field inside "structure Int128 where" has an indented
+#    doc comment that still refers to "64-bit".  The comment text is
+#    harmless but misleading.
+#
+# --mode lemmas (Init/Data/SInt/Lemmas.lean → Lemmas_Int128.lean)
+# ────────────────────────────────────────────────────────────────
+# 1. ISize.toInt_le_int128MaxValue: proof broken after rename.
+#    The original proof uses le_of_lt_add_one x.toInt_lt, which establishes
+#    x.toInt ≤ 2^(Platform.numBits/2) - 1.  After rename the goal becomes
+#    x.toInt ≤ 2^127 - 1, which that lemma cannot prove (ISize ≠ Int128).
+#    Fix: manual proof using Int.le_trans and Platform.numBits_eq.
+#
+# 2. UInt128.toInt128_ofNatLT: references BitVec.ofNatLT_eq_ofNat which does
+#    not exist at Lean v4.29.0-rc1.
+#    Fix: find or prove an equivalent simp lemma for this version.
+#
+# --mode toexpr  (Lean/ToExpr.lean → Lean/ToExpr.lean)
+# ──────────────────────────────────────────────────────
+# The generated file uses "open Lean" globally (in the header) instead of
+# the per-instance "open Lean in" style used in the existing file.
+# This is functionally equivalent.
+#
+# --mode sint  (Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean → BuiltinSimpProcs/SInt.lean)
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# No known shortcomings.  The macro approach produces a clean, maintainable
+# file; updating to a new Lean version is a matter of re-running the script.
+
 import argparse
 import re
 
