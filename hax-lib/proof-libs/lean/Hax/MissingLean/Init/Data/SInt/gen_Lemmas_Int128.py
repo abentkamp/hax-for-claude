@@ -11,6 +11,7 @@ Supports seven modes:
   --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
   --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
   --mode basicaux           Generate Init/Data/UInt/BasicAux.lean from Init/Data/UInt/BasicAux.lean
+  --mode uintbasic          Generate Init/Data/UInt/Basic.lean    from Init/Data/UInt/Basic.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -23,7 +24,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux,uintbasic}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -117,6 +118,13 @@ If no output path is given the result is printed to stdout.
 #      def UInt128.toUSize  (a : UInt128) : USize  := a.toNat.toUSize
 #      def UInt64.toUInt128 (a : UInt64)  : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
 #      def USize.toUInt128  (a : USize)   : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
+#
+# --mode uintbasic  (Init/Data/UInt/Basic.lean → Init/Data/UInt/Basic.lean)
+# ─────────────────────────────────────────────────────────────────────────
+# 1. The `additional_uint_decls` macro (overflow helpers toNat_add_of_lt etc.)
+#    and its invocations have no upstream counterpart; must be added manually.
+# 2. The `declare_missing_uint_conversions` macro and its invocation have no
+#    upstream counterpart; must be added manually.
 
 import argparse
 import re
@@ -198,6 +206,31 @@ import Hax.MissingLean.Init.Prelude
 BASICAUX_SUBS = [
     ("⟨⟨a.toNat, Nat.lt_trans a.toBitVec.isLt (by decide)⟩⟩",
      "⟨BitVec.ofNat 128 a.toNat⟩"),
+]
+
+UINTBASIC_HEADER = """\
+import Hax.MissingLean.Init.Data.UInt.BasicAux
+
+-- Adapted from Init/Data/UInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
+
+# ---------------------------------------------------------------------------
+# UIntBasic mode: substitutions applied after the standard renaming.
+# ---------------------------------------------------------------------------
+
+UINTBASIC_SUBS = [
+    # Shift modulus: 128-bit shifts are taken mod 128, not 64.
+    ("UInt128.mod b 64)", "UInt128.mod b 128)"),
+    # Restore instance_reducible for decLt/decLe (stripped with extern decorator).
+    ("attribute [instance] UInt128.decLt",
+     "attribute [instance_reducible, instance] UInt128.decLt"),
+    # Re-add set_option linter.missingDocs around the deprecated modn definition.
+    ('@[deprecated UInt128.mod (since := "2024-09-23")]',
+     'set_option linter.missingDocs false in\n@[deprecated UInt128.mod (since := "2024-09-23")]'),
+    # Re-add set_option linter.deprecated around the HMod instance.
+    ("instance : HMod UInt128 Nat UInt128",
+     "set_option linter.deprecated false in\ninstance : HMod UInt128 Nat UInt128"),
+    # Qualify ofNat in ofInt to avoid potential name resolution ambiguity.
+    (": UInt128 := ofNat ", ": UInt128 := UInt128.ofNat "),
 ]
 
 # ---------------------------------------------------------------------------
@@ -437,7 +470,7 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux", "uintbasic"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
@@ -447,7 +480,8 @@ def main() -> None:
             "toint: generate Init/GrindInstances/ToInt.lean; "
             "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
             "prelude: generate Init/Prelude.lean; "
-            "basicaux: generate Init/Data/UInt/BasicAux.lean"
+            "basicaux: generate Init/Data/UInt/BasicAux.lean; "
+            "uintbasic: generate Init/Data/UInt/Basic.lean"
         ),
     )
     args = parser.parse_args()
@@ -494,6 +528,27 @@ def main() -> None:
                     item = item.replace(old, new)
                 kept.append(item)
         output = BASICAUX_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
+    elif args.mode == "uintbasic":
+        # UIntBasic mode: strip @[extern "..."] decorators, drop the two
+        # USize↔UInt64 cross-type conversions that are either already in
+        # BasicAux or produce wrong bodies for UInt128, then apply UINTBASIC_SUBS
+        # to fix shift moduli, instance_reducible, set_option wrappers, and ofNat.
+        kept: list[str] = []
+        for item in split_into_items(raw_lines):
+            if (should_keep(item)
+                    and is_lean_declaration(item)
+                    and not is_extern_attribute_decl(item)):
+                item = strip_extern_decorator(item)
+                # Drop USize↔UInt64 conversions (wrong body / belongs in BasicAux)
+                first = item.split("\n")[0]
+                if (first.startswith("def UInt64.toUSize")
+                        or first.startswith("def USize.toUInt64")):
+                    continue
+                item = apply_substitutions(item)
+                for old, new in UINTBASIC_SUBS:
+                    item = item.replace(old, new)
+                kept.append(item)
+        output = UINTBASIC_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
     else:
         header = {
             "lemmas":   LEMMAS_HEADER,
