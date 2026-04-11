@@ -1,5 +1,7 @@
 import Hax.MissingLean.Init.GrindInstances.ToInt
 
+-- Adapted from Init/GrindInstances/Ring/SInt.lean from the Lean v4.29.0-rc1 source code
+
 open Lean Grind
 
 @[expose, instance_reducible]
@@ -52,7 +54,9 @@ instance : IsCharP Int128 (2 ^ 128) := IsCharP.mk' _ _
 
 -- Verify we can derive the instances showing how `toInt` interacts with operations:
 example : ToInt.Add Int128 (.sint 128) := inferInstance
+
 example : ToInt.Neg Int128 (.sint 128) := inferInstance
+
 example : ToInt.Sub Int128 (.sint 128) := inferInstance
 
 instance : ToInt.Pow Int128 (.sint 128) := ToInt.pow_of_semiring (by simp)

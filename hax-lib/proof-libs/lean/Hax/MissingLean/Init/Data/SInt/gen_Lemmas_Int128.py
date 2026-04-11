@@ -2,12 +2,13 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports four modes:
-  --mode lemmas  (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
-  --mode basic             Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
-  --mode toexpr            Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
-  --mode sint              Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
-  --mode toint             Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
+Supports five modes:
+  --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
+  --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
+  --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
+  --mode sint               Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
+  --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
+  --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -20,7 +21,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -98,6 +99,14 @@ If no output path is given the result is printed to stdout.
 #      -- The `ToInt.Pow` instance is defined in `Init.GrindInstances.Ring.SInt`, ...
 #    Neither references Int64 or UInt64, so they are filtered by should_keep.
 #    Fix: manually re-add both comment lines.
+#
+# --mode ringsint  (Init/GrindInstances/Ring/SInt.lean → Init/GrindInstances/Ring/SInt.lean)
+# ──────────────────────────────────────────────────────────────────────────────────────────
+# 1. Verification comment dropped.
+#    The inline comment "-- Verify we can derive the instances showing how
+#    `toInt` interacts with operations:" does not contain "Int64" or "UInt64",
+#    so it is filtered by should_keep.
+#    Fix: manually re-add the comment line before the three `example` lines.
 
 import argparse
 import re
@@ -153,6 +162,13 @@ import Hax.MissingLean.Init.Data.UInt.Lemmas_UInt128
 -- Adapted from Init/GrindInstances/ToInt.lean from the Lean v4.29.0-rc1 source code
 
 open Lean.Grind"""
+
+RINGSINT_HEADER = """\
+import Hax.MissingLean.Init.GrindInstances.ToInt
+
+-- Adapted from Init/GrindInstances/Ring/SInt.lean from the Lean v4.29.0-rc1 source code
+
+open Lean Grind"""
 
 # ---------------------------------------------------------------------------
 # Sint mode: substitutions applied to the extracted macro body.
@@ -249,7 +265,7 @@ def should_keep(item: str) -> bool:
 LEAN_DECL_PREFIXES = (
     "def ", "abbrev ", "protected ", "private ", "@[",
     "theorem ", "lemma ", "instance ", "attribute ",
-    "structure ", "class ", "set_option ",
+    "structure ", "class ", "set_option ", "example ",
 )
 
 
@@ -312,10 +328,21 @@ def split_into_items(lines: list[str]) -> list[str]:
                 items.append("\n".join(current))
                 current = []
         elif line[0] != " " and line[0] != "\t":
-            # Unindented non-blank line: starts a new item, UNLESS it is a
-            # bare "where" which is a continuation clause of the preceding
-            # declaration in Lean syntax.
+            # Unindented non-blank line: starts a new item, UNLESS it is:
+            #   (a) a bare "where" — a continuation clause in Lean syntax, or
+            #   (b) the command following a pending "attribute X in" — which
+            #       in Lean4 must appear on the very next line.
             if line.rstrip() == "where" and current:
+                current.append(line)
+            elif (current and len(current) == 1
+                  and current[0].startswith("attribute ")
+                  and current[0].rstrip().endswith(" in")):
+                # Pending "attribute X in" — attach next declaration to same item.
+                current.append(line)
+            elif (current and len(current) == 1
+                  and current[0].startswith("@[")
+                  and current[0].rstrip().endswith("]")):
+                # Single @[...] attribute decorator — attach next declaration to same item.
                 current.append(line)
             else:
                 if current:
@@ -339,14 +366,15 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
             "basic: generate Basic_Int128.lean; "
             "toexpr: generate Lean/ToExpr.lean; "
             "sint: generate BuiltinSimpProcs/SInt.lean; "
-            "toint: generate Init/GrindInstances/ToInt.lean"
+            "toint: generate Init/GrindInstances/ToInt.lean; "
+            "ringsint: generate Init/GrindInstances/Ring/SInt.lean"
         ),
     )
     args = parser.parse_args()
@@ -362,10 +390,11 @@ def main() -> None:
         output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
     else:
         header = {
-            "lemmas":  LEMMAS_HEADER,
-            "basic":   BASIC_HEADER,
-            "toexpr":  TOEXPR_HEADER,
-            "toint":   TOINT_HEADER,
+            "lemmas":   LEMMAS_HEADER,
+            "basic":    BASIC_HEADER,
+            "toexpr":   TOEXPR_HEADER,
+            "toint":    TOINT_HEADER,
+            "ringsint": RINGSINT_HEADER,
         }[args.mode]
 
         # Collect kept items
