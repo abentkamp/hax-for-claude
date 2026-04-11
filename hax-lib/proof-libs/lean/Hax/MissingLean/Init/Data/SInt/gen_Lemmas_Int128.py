@@ -131,6 +131,14 @@ If no output path is given the result is printed to stdout.
 #    hax file instead uses a combined
 #    `attribute [instance_reducible, instance] UInt128.decLt UInt128.decLe`.
 #    Both are functionally equivalent.
+# 4. `UInt128.ofInt` uses bare `ofNat` (from upstream `UInt64.ofInt`):
+#      def UInt128.ofInt (x : Int) : UInt128 := ofNat (x % 2 ^ 128).toNat
+#    The hax file qualifies it as `UInt128.ofNat`.  Fix: replace manually or
+#    add a UINTBASIC_SUBS entry `(": UInt128 := ofNat ", ": UInt128 := UInt128.ofNat ")`.
+# 5. The `@[deprecated]` modn definition and the `HMod UInt128 Nat UInt128`
+#    instance are generated without their upstream `set_option linter.*` wrappers
+#    (those lines contain no "UInt64" and are dropped by should_keep).
+#    The generated file may trigger linter warnings at use sites.
 
 import argparse
 import re
@@ -226,8 +234,6 @@ import Hax.MissingLean.Init.Data.UInt.BasicAux
 UINTBASIC_SUBS = [
     # Shift modulus: 128-bit shifts are taken mod 128, not 64.
     ("UInt128.mod b 64)", "UInt128.mod b 128)"),
-    # Qualify ofNat in ofInt to avoid potential name resolution ambiguity.
-    (": UInt128 := ofNat ", ": UInt128 := UInt128.ofNat "),
 ]
 
 # ---------------------------------------------------------------------------
@@ -387,20 +393,19 @@ def is_extern_attribute_decl(item: str) -> bool:
 
 def strip_extern_decorator(item: str) -> str:
     """
-    If the first line is `@[extern "..."]` or `@[extern "...", attr, ...]`,
-    remove the extern attribute.  Any remaining attributes (e.g.
-    `instance_reducible`) are preserved as `@[attr, ...]` on the same line.
-    If no other attributes are present, the decorator line is dropped entirely.
+    If the first line is `@[extern "..."]` or `@[extern "...", instance_reducible]`,
+    remove the extern attribute.  The `instance_reducible` attribute, when present,
+    is preserved as `@[instance_reducible]` on the same line; other co-located
+    attributes (e.g. `tagged_return`) are FFI-specific and are dropped along with
+    the extern.  If the decorator line contained only the extern entry, it is
+    dropped entirely.
     """
     lines = item.split("\n")
     if not lines or not lines[0].startswith('@[extern "'):
         return item
-    m = re.match(r'^@\[extern "[^"]*"(.*)\]$', lines[0])
-    if m:
-        rest = m.group(1).strip().lstrip(",").strip()
-        if rest:
-            lines[0] = f"@[{rest}]"
-            return "\n".join(lines)
+    if "instance_reducible" in lines[0]:
+        lines[0] = "@[instance_reducible]"
+        return "\n".join(lines)
     return "\n".join(lines[1:])
 
 
