@@ -2,7 +2,7 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports six modes:
+Supports seven modes:
   --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
@@ -10,6 +10,7 @@ Supports six modes:
   --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
   --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
   --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
+  --mode basicaux           Generate Init/Data/UInt/BasicAux.lean from Init/Data/UInt/BasicAux.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -22,7 +23,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -106,6 +107,16 @@ If no output path is given the result is printed to stdout.
 # 1. Structure field doc comments are preserved from upstream. The existing
 #    hax file omits them. The generated file is more informative; update the
 #    hax file to keep the docs, or delete them manually if preferred.
+#
+# --mode basicaux  (Init/Data/UInt/BasicAux.lean → Init/Data/UInt/BasicAux.lean)
+# ────────────────────────────────────────────────────────────────────────────────
+# 1. Four conversions have no upstream counterpart (no UInt64.toUInt64,
+#    USize.toUInt64, UInt64.toUSize, or USize.toUSize in the UInt64 block) and
+#    must be added manually after generation:
+#      def UInt128.toUInt64 (a : UInt128) : UInt64 := a.toNat.toUInt64
+#      def UInt128.toUSize  (a : UInt128) : USize  := a.toNat.toUSize
+#      def UInt64.toUInt128 (a : UInt64)  : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
+#      def USize.toUInt128  (a : USize)   : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
 
 import argparse
 import re
@@ -171,6 +182,23 @@ open Lean Grind"""
 
 # Leading \n produces the blank first line present in the existing hax file.
 PRELUDE_HEADER = "\n-- Adapted from Init/Prelude.lean from the Lean v4.29.0-rc1 source code"
+
+BASICAUX_HEADER = """\
+import Hax.MissingLean.Init.Prelude
+
+-- Adapted from Init/Data/UInt/BasicAux.lean from the Lean v4.29.0-rc1 source code"""
+
+# ---------------------------------------------------------------------------
+# BasicAux mode: substitutions applied after the standard renaming.
+# The upstream encodes small-to-large widening conversions using a Fin-based
+# proof construction that is valid for UInt64 but causes `decide` to evaluate
+# 2^128 (a 39-digit number) for UInt128.  Replace with BitVec.ofNat instead.
+# ---------------------------------------------------------------------------
+
+BASICAUX_SUBS = [
+    ("⟨⟨a.toNat, Nat.lt_trans a.toBitVec.isLt (by decide)⟩⟩",
+     "⟨BitVec.ofNat 128 a.toNat⟩"),
+]
 
 # ---------------------------------------------------------------------------
 # Sint mode: substitutions applied to the extracted macro body.
@@ -409,7 +437,7 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
@@ -418,7 +446,8 @@ def main() -> None:
             "sint: generate BuiltinSimpProcs/SInt.lean; "
             "toint: generate Init/GrindInstances/ToInt.lean; "
             "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
-            "prelude: generate Init/Prelude.lean"
+            "prelude: generate Init/Prelude.lean; "
+            "basicaux: generate Init/Data/UInt/BasicAux.lean"
         ),
     )
     args = parser.parse_args()
@@ -448,6 +477,23 @@ def main() -> None:
                 if is_uint64_primary_definition(item):
                     kept.append(apply_substitutions(item))
         output = PRELUDE_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
+    elif args.mode == "basicaux":
+        # BasicAux mode: strip @[extern "..."] decorator lines (all UInt64
+        # definitions in this file have extern implementations) and apply
+        # BASICAUX_SUBS to fix the body of widening conversions.  No
+        # is_uint64_primary_definition filter needed — every UInt64 item in
+        # this file is a genuine UInt64 definition or conversion.
+        kept: list[str] = []
+        for item in split_into_items(raw_lines):
+            if (should_keep(item)
+                    and is_lean_declaration(item)
+                    and not is_extern_attribute_decl(item)):
+                item = strip_extern_decorator(item)
+                item = apply_substitutions(item)
+                for old, new in BASICAUX_SUBS:
+                    item = item.replace(old, new)
+                kept.append(item)
+        output = BASICAUX_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
     else:
         header = {
             "lemmas":   LEMMAS_HEADER,
