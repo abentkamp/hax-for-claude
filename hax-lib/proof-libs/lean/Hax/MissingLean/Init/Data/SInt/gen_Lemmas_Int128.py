@@ -2,13 +2,14 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports five modes:
+Supports six modes:
   --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
   --mode sint               Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
   --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
   --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
+  --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -21,7 +22,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -32,15 +33,7 @@ If no output path is given the result is printed to stdout.
 #
 # --mode basic (Init/Data/SInt/Basic.lean → Basic_Int128.lean)
 # ─────────────────────────────────────────────────────────────
-# 1. Circular size abbrev.
-#    Source: abbrev Int64.size : Nat := 18446744073709551616
-#    Generated: abbrev Int128.size : Nat := Int128.size   ← circular
-#    Reason: LITERAL_SUBS renames Int64→Int128 first, then the literal
-#            18446744073709551616 → Int128.size, so the RHS references the
-#            name being defined.
-#    Fix: replace with the literal value 340282366920938463463374607431768211456
-#
-# 2. Wrong maxValue / minValue literals.
+# 1. Wrong maxValue / minValue literals.
 #    Source contains Int64's evaluated bounds (9223372036854775807 and
 #    -9223372036854775808); these numeric literals are not matched by any
 #    substitution rule.
@@ -48,23 +41,23 @@ If no output path is given the result is printed to stdout.
 #         (170141183460469231731687303715884105727 and
 #          -170141183460469231731687303715884105728).
 #
-# 3. Hashable Int128: wrong hash return type.
+# 2. Hashable Int128: wrong hash return type.
 #    Source: hash i := i.toUInt64   →   generated: hash i := i.toUInt128
 #    Hashable.hash must return UInt64, not UInt128.
 #    Fix: hash i := UInt64.ofInt i.toInt
 #
-# 4. Spurious Hashable Int8/Int16/Int32/ISize instances.
+# 3. Spurious Hashable Int8/Int16/Int32/ISize instances.
 #    These instances in the source implement Hashable by calling .toUInt64,
 #    so they contain "UInt64" and pass should_keep.  After renaming they
 #    reference .toUInt128 (wrong return type) and are not about Int128 at all.
 #    Fix: delete all four instances.
 #
-# 5. Missing Int128.toInt64 and Int64.toInt128 conversions.
+# 4. Missing Int128.toInt64 and Int64.toInt128 conversions.
 #    No integer type larger than Int64 appears in Basic.lean, so there is
 #    nothing to rename into these functions.
 #    Fix: add both definitions manually.
 #
-# 6. Structure field doc comment not updated.
+# 5. Structure field doc comment not updated.
 #    The toUInt128 field inside "structure Int128 where" has an indented
 #    doc comment that still refers to "64-bit".  The comment text is
 #    harmless but misleading.
@@ -107,6 +100,12 @@ If no output path is given the result is printed to stdout.
 #    `toInt` interacts with operations:" does not contain "Int64" or "UInt64",
 #    so it is filtered by should_keep.
 #    Fix: manually re-add the comment line before the three `example` lines.
+#
+# --mode prelude  (Init/Prelude.lean → Init/Prelude.lean)
+# ─────────────────────────────────────────────────────────
+# 1. Structure field doc comments are preserved from upstream. The existing
+#    hax file omits them. The generated file is more informative; update the
+#    hax file to keep the docs, or delete them manually if preferred.
 
 import argparse
 import re
@@ -170,6 +169,9 @@ import Hax.MissingLean.Init.GrindInstances.ToInt
 
 open Lean Grind"""
 
+# Leading \n produces the blank first line present in the existing hax file.
+PRELUDE_HEADER = "\n-- Adapted from Init/Prelude.lean from the Lean v4.29.0-rc1 source code"
+
 # ---------------------------------------------------------------------------
 # Sint mode: substitutions applied to the extracted macro body.
 # The upstream macro uses builtin_dsimproc/builtin_simproc (for types built
@@ -227,8 +229,10 @@ LITERAL_SUBS = [
     # IntInterval shape arguments in ToInt instances:
     (".uint 64",  ".uint 128"),
     (".sint 64",  ".sint 128"),
-    # Int64.size appears as the evaluated literal 2^64 in the source:
-    ("18446744073709551616", "Int128.size"),
+    # UInt64.size / Int64.size appear as the evaluated literal 2^64 in the source.
+    # We use the bare 2^128 literal so the substitution is valid even in contexts
+    # where Int128.size is not yet defined (e.g. Init/Prelude.lean).
+    ("18446744073709551616", "340282366920938463463374607431768211456"),
 ]
 
 # Signed-range bounds: 2^63  →  2^127
@@ -311,6 +315,45 @@ def uses_unavailable_typeclass(item: str) -> bool:
     return "IsLinearOrder" in item or "LawfulOrderLT" in item
 
 
+def is_extern_attribute_decl(item: str) -> bool:
+    """
+    Return True for standalone `attribute [extern "..."] Foo.bar` declarations.
+    These are extern C linkage annotations for built-in kernel types; they have
+    no counterpart for UInt128/Int128 and must be dropped in prelude mode.
+    Distinguishes them from `attribute [local instance] X in CMD` (which ends
+    with " in") by checking that " in" is absent.
+    """
+    first = item.split("\n")[0]
+    return first.startswith('attribute [extern "') and " in" not in first
+
+
+def strip_extern_decorator(item: str) -> str:
+    """
+    If the first line of an item is `@[extern "..."]`, remove it.
+    In prelude mode the upstream uses extern FFI decorators on `ofNatLT` and
+    `decEq`; the hax versions are pure Lean definitions without extern linkage.
+    """
+    lines = item.split("\n")
+    if lines and lines[0].startswith('@[extern "'):
+        return "\n".join(lines[1:])
+    return item
+
+
+def is_uint64_primary_definition(item: str) -> bool:
+    """
+    For prelude mode: return True only for items that define UInt64 itself or
+    provide a typeclass instance specifically for UInt64.  Rejects items that
+    merely use UInt64 as a return/argument type (e.g. class Hashable, mixHash,
+    String.hash).  Must be called after strip_extern_decorator so the first
+    line is the actual declaration, not the @[extern "..."] decorator.
+    """
+    first = item.split("\n")[0]
+    return (first.startswith("abbrev UInt64") or
+            first.startswith("structure UInt64") or
+            first.startswith("def UInt64.") or
+            (first.startswith("instance : ") and "UInt64" in first))
+
+
 def split_into_items(lines: list[str]) -> list[str]:
     """
     Split lines into top-level items.  Each item starts at an unindented
@@ -366,7 +409,7 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
@@ -374,7 +417,8 @@ def main() -> None:
             "toexpr: generate Lean/ToExpr.lean; "
             "sint: generate BuiltinSimpProcs/SInt.lean; "
             "toint: generate Init/GrindInstances/ToInt.lean; "
-            "ringsint: generate Init/GrindInstances/Ring/SInt.lean"
+            "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
+            "prelude: generate Init/Prelude.lean"
         ),
     )
     args = parser.parse_args()
@@ -388,6 +432,22 @@ def main() -> None:
         for old, new in SINT_SUBS:
             macro_text = macro_text.replace(old, new)
         output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
+    elif args.mode == "prelude":
+        # Prelude mode: drop extern-only attribute declarations and strip
+        # @[extern "..."] decorator lines from definitions.  Then keep only
+        # items that define UInt64 itself (not items that merely use UInt64 as
+        # a return/argument type such as class Hashable or opaque mixHash).
+        # The standard isize-conversion and unavailable-typeclass filters are
+        # not needed (no ISize or IsLinearOrder in Init/Prelude.lean).
+        kept: list[str] = []
+        for item in split_into_items(raw_lines):
+            if (should_keep(item)
+                    and is_lean_declaration(item)
+                    and not is_extern_attribute_decl(item)):
+                item = strip_extern_decorator(item)
+                if is_uint64_primary_definition(item):
+                    kept.append(apply_substitutions(item))
+        output = PRELUDE_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
     else:
         header = {
             "lemmas":   LEMMAS_HEADER,
