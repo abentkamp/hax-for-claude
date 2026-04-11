@@ -125,6 +125,12 @@ If no output path is given the result is printed to stdout.
 #    and its invocations have no upstream counterpart; must be added manually.
 # 2. The `declare_missing_uint_conversions` macro and its invocation have no
 #    upstream counterpart; must be added manually.
+# 3. The generated output has `@[instance_reducible]\ndef UInt128.decLt/decLe`
+#    (instance_reducible preserved from the stripped extern decorator) plus a
+#    separate `attribute [instance] UInt128.decLt UInt128.decLe`.  The existing
+#    hax file instead uses a combined
+#    `attribute [instance_reducible, instance] UInt128.decLt UInt128.decLe`.
+#    Both are functionally equivalent.
 
 import argparse
 import re
@@ -220,15 +226,6 @@ import Hax.MissingLean.Init.Data.UInt.BasicAux
 UINTBASIC_SUBS = [
     # Shift modulus: 128-bit shifts are taken mod 128, not 64.
     ("UInt128.mod b 64)", "UInt128.mod b 128)"),
-    # Restore instance_reducible for decLt/decLe (stripped with extern decorator).
-    ("attribute [instance] UInt128.decLt",
-     "attribute [instance_reducible, instance] UInt128.decLt"),
-    # Re-add set_option linter.missingDocs around the deprecated modn definition.
-    ('@[deprecated UInt128.mod (since := "2024-09-23")]',
-     'set_option linter.missingDocs false in\n@[deprecated UInt128.mod (since := "2024-09-23")]'),
-    # Re-add set_option linter.deprecated around the HMod instance.
-    ("instance : HMod UInt128 Nat UInt128",
-     "set_option linter.deprecated false in\ninstance : HMod UInt128 Nat UInt128"),
     # Qualify ofNat in ofInt to avoid potential name resolution ambiguity.
     (": UInt128 := ofNat ", ": UInt128 := UInt128.ofNat "),
 ]
@@ -390,14 +387,21 @@ def is_extern_attribute_decl(item: str) -> bool:
 
 def strip_extern_decorator(item: str) -> str:
     """
-    If the first line of an item is `@[extern "..."]`, remove it.
-    In prelude mode the upstream uses extern FFI decorators on `ofNatLT` and
-    `decEq`; the hax versions are pure Lean definitions without extern linkage.
+    If the first line is `@[extern "..."]` or `@[extern "...", attr, ...]`,
+    remove the extern attribute.  Any remaining attributes (e.g.
+    `instance_reducible`) are preserved as `@[attr, ...]` on the same line.
+    If no other attributes are present, the decorator line is dropped entirely.
     """
     lines = item.split("\n")
-    if lines and lines[0].startswith('@[extern "'):
-        return "\n".join(lines[1:])
-    return item
+    if not lines or not lines[0].startswith('@[extern "'):
+        return item
+    m = re.match(r'^@\[extern "[^"]*"(.*)\]$', lines[0])
+    if m:
+        rest = m.group(1).strip().lstrip(",").strip()
+        if rest:
+            lines[0] = f"@[{rest}]"
+            return "\n".join(lines)
+    return "\n".join(lines[1:])
 
 
 def is_uint64_primary_definition(item: str) -> bool:
@@ -529,10 +533,11 @@ def main() -> None:
                 kept.append(item)
         output = BASICAUX_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
     elif args.mode == "uintbasic":
-        # UIntBasic mode: strip @[extern "..."] decorators, drop the two
+        # UIntBasic mode: strip @[extern "..."] decorators (preserving any
+        # co-located attributes such as instance_reducible), drop the two
         # USize↔UInt64 cross-type conversions that are either already in
         # BasicAux or produce wrong bodies for UInt128, then apply UINTBASIC_SUBS
-        # to fix shift moduli, instance_reducible, set_option wrappers, and ofNat.
+        # to fix shift moduli and qualify ofNat.
         kept: list[str] = []
         for item in split_into_items(raw_lines):
             if (should_keep(item)
