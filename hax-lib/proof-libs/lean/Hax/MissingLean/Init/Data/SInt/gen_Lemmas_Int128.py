@@ -7,6 +7,7 @@ Supports four modes:
   --mode basic             Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr            Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
   --mode sint              Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
+  --mode toint             Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -19,7 +20,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -89,6 +90,14 @@ If no output path is given the result is printed to stdout.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # No known shortcomings.  The macro approach produces a clean, maintainable
 # file; updating to a new Lean version is a matter of re-running the script.
+#
+# --mode toint  (Init/GrindInstances/ToInt.lean → Init/GrindInstances/ToInt.lean)
+# ────────────────────────────────────────────────────────────────────────────────
+# 1. Comments about ToInt.Pow are dropped from the output.  Two comment blocks:
+#      -- The `ToInt.Pow` instance is defined in `Init.GrindInstances.Ring.UInt`, ...
+#      -- The `ToInt.Pow` instance is defined in `Init.GrindInstances.Ring.SInt`, ...
+#    Neither references Int64 or UInt64, so they are filtered by should_keep.
+#    Fix: manually re-add both comment lines.
 
 import argparse
 import re
@@ -136,6 +145,14 @@ import Hax.MissingLean.Lean.ToExpr
 -- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean from the Lean v4.29.0-rc1 source code
 
 open Lean Meta Simp"""
+
+TOINT_HEADER = """\
+import Hax.MissingLean.Init.Data.SInt.Lemmas_Int128
+import Hax.MissingLean.Init.Data.UInt.Lemmas_UInt128
+
+-- Adapted from Init/GrindInstances/ToInt.lean from the Lean v4.29.0-rc1 source code
+
+open Lean.Grind"""
 
 # ---------------------------------------------------------------------------
 # Sint mode: substitutions applied to the extracted macro body.
@@ -191,6 +208,9 @@ LITERAL_SUBS = [
     ("BitVec.ofInt 64", "BitVec.ofInt 128"),
     ("#64", "#128"),
     ("ofNat 64", "ofNat 128"),  # rare but possible
+    # IntInterval shape arguments in ToInt instances:
+    (".uint 64",  ".uint 128"),
+    (".sint 64",  ".sint 128"),
     # Int64.size appears as the evaluated literal 2^64 in the source:
     ("18446744073709551616", "Int128.size"),
 ]
@@ -319,13 +339,14 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
             "basic: generate Basic_Int128.lean; "
             "toexpr: generate Lean/ToExpr.lean; "
-            "sint: generate BuiltinSimpProcs/SInt.lean"
+            "sint: generate BuiltinSimpProcs/SInt.lean; "
+            "toint: generate Init/GrindInstances/ToInt.lean"
         ),
     )
     args = parser.parse_args()
@@ -340,7 +361,12 @@ def main() -> None:
             macro_text = macro_text.replace(old, new)
         output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
     else:
-        header = {"lemmas": LEMMAS_HEADER, "basic": BASIC_HEADER, "toexpr": TOEXPR_HEADER}[args.mode]
+        header = {
+            "lemmas":  LEMMAS_HEADER,
+            "basic":   BASIC_HEADER,
+            "toexpr":  TOEXPR_HEADER,
+            "toint":   TOINT_HEADER,
+        }[args.mode]
 
         # Collect kept items
         kept: list[str] = []
