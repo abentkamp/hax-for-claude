@@ -1,33 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
+Generate Int128/UInt128 Lean declarations from Lean4 upstream source files.
 
-Supports ten modes:
-  --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
-  --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
-  --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
-  --mode sint               Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
-  --mode uintsimproc        Generate BuiltinSimpProcs/UInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean
-  --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
-  --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
-  --mode ringuint           Generate Init/GrindInstances/Ring/UInt.lean from Init/GrindInstances/Ring/UInt.lean
-  --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
-  --mode basicaux           Generate Init/Data/UInt/BasicAux.lean from Init/Data/UInt/BasicAux.lean
-  --mode uintbasic          Generate Init/Data/UInt/Basic.lean    from Init/Data/UInt/Basic.lean
-  --mode uintlemmas         Generate Init/Data/UInt/Lemmas_UInt128.lean from Init/Data/UInt/Lemmas.lean
+Automatically locates the Lean4 source tree via the nearest lean-toolchain file
+(searched upward from this script), reads each upstream source file, applies all
+transformation pipelines, and writes the combined output to a single Lean file.
 
-Strategy:
-  1. Split the source file into items, each starting at an unindented line.
-  2. Keep every item that:
-       a. mentions "Int64" or "UInt64" (is Int64-specific), and
-       b. is a Lean declaration (not a doc comment or bare text), and
-       c. does not involve an ISize↔Int64 conversion, and
-       d. does not reference typeclasses unavailable for Int128.
-  3. Apply text substitutions to rename everything to 128-bit variants.
-  4. Prepend the hard-coded header for the chosen mode.
+The output contains no import statements; each section is prefixed with a comment
+header identifying the upstream source and the target hax file.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,uintsimproc,toint,ringsint,ringuint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -178,92 +161,68 @@ If no output path is given the result is printed to stdout.
 #    `numBits` math) is not generated; it handles platform-dependent bit widths
 #    irrelevant to UInt128.
 
-import argparse
+from pathlib import Path
 import re
+import sys
 
 # ---------------------------------------------------------------------------
-# Fixed headers for the generated files
+# Import-free preambles for each section of the combined output.
+# (Imports are already excluded by the should_keep / is_lean_declaration
+# pipeline filters and need not appear in a reference file.)
 # ---------------------------------------------------------------------------
 
-LEMMAS_HEADER = """\
-import Hax.MissingLean.Init.Data.SInt.Basic_Int128
-import Hax.MissingLean.Init.Data.UInt.Lemmas_UInt128
-import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.SInt
-import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.UInt
-
--- Adapted from Init/Data/SInt/Lemmas.lean from the Lean v4.29.0-rc1 source code
-
--- Proofs that use (rfl) on 128-bit arithmetic require more kernel unfolding
--- steps than the default limit allows (Int128 routes through UInt128, adding
--- an extra indirection layer compared to the 64-bit built-in types).
+LEMMAS_PREAMBLE = """\
 set_option maxRecDepth 4000
 
 declare_int_theorems Int128 128"""
 
-BASIC_HEADER = """\
-import Hax.MissingLean.Init.Prelude
-import Lean.Meta.Tactic.Simp.BuiltinSimprocs.SInt
+BASIC_PREAMBLE = "set_option autoImplicit true"
 
-set_option autoImplicit true
+TOEXPR_PREAMBLE = "open Lean"
 
--- Adapted from Init/Data/SInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
+SINT_PREAMBLE = "open Lean Meta Simp"
 
-TOEXPR_HEADER = """\
-import Lean
-import Hax.MissingLean.Init.Data.UInt.Basic
-import Hax.MissingLean.Init.Data.SInt.Basic_Int128
+UINTSIMPROC_PREAMBLE = "open Lean Meta Simp"
 
--- Adapted from Lean/ToExpr.lean from the Lean v4.29.0-rc1 source code
+TOINT_PREAMBLE = "open Lean.Grind"
 
-open Lean"""
+RINGSINT_PREAMBLE = "open Lean Grind"
 
-SINT_HEADER = """\
-import Lean
-import Hax.MissingLean.Lean.ToExpr
-
--- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean from the Lean v4.29.0-rc1 source code
-
-open Lean Meta Simp"""
-
-UINTSIMPROC_HEADER = """\
-import Lean
-import Hax.MissingLean.Lean.ToExpr
-
--- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean from the Lean v4.29.0-rc1 source code
-
-open Lean Meta Simp"""
-
-TOINT_HEADER = """\
-import Hax.MissingLean.Init.Data.SInt.Lemmas_Int128
-import Hax.MissingLean.Init.Data.UInt.Lemmas_UInt128
-
--- Adapted from Init/GrindInstances/ToInt.lean from the Lean v4.29.0-rc1 source code
-
-open Lean.Grind"""
-
-RINGSINT_HEADER = """\
-import Hax.MissingLean.Init.GrindInstances.ToInt
-
--- Adapted from Init/GrindInstances/Ring/SInt.lean from the Lean v4.29.0-rc1 source code
-
-open Lean Grind"""
-
-RINGUINT_HEADER = """\
-import Hax.MissingLean.Init.GrindInstances.ToInt
-
--- Adapted from Init/GrindInstances/Ring/UInt.lean from the Lean v4.29.0-rc1 source code
-
+RINGUINT_PREAMBLE = """\
 open Lean Grind
 
 set_option autoImplicit true"""
 
-# Leading \n produces the blank first line present in the existing hax file.
-PRELUDE_HEADER = "\n-- Adapted from Init/Prelude.lean from the Lean v4.29.0-rc1 source code"
+PRELUDE_PREAMBLE = ""
 
-BASICAUX_HEADER = """\
-import Hax.MissingLean.Init.Prelude
+BASICAUX_PREAMBLE = ""
 
--- Adapted from Init/Data/UInt/BasicAux.lean from the Lean v4.29.0-rc1 source code"""
+UINTBASIC_PREAMBLE = ""
+
+UINTLEMMAS_PREAMBLE = """\
+set_option autoImplicit true
+open Std
+
+declare_uint_theorems UInt128 128"""
+
+# ---------------------------------------------------------------------------
+# Ordered (mode, upstream_rel_path, hax_rel_path) for every section.
+# ---------------------------------------------------------------------------
+
+SECTIONS: list[tuple[str, str, str]] = [
+    ("prelude",     "Init/Prelude.lean",                               "Init/Prelude.lean"),
+    ("basicaux",    "Init/Data/UInt/BasicAux.lean",                    "Init/Data/UInt/BasicAux.lean"),
+    ("uintbasic",   "Init/Data/UInt/Basic.lean",                       "Init/Data/UInt/Basic.lean"),
+    ("uintsimproc", "Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/UInt.lean"),
+    ("uintlemmas",  "Init/Data/UInt/Lemmas.lean",                      "Init/Data/UInt/Lemmas_UInt128.lean"),
+    ("basic",       "Init/Data/SInt/Basic.lean",                       "Init/Data/SInt/Basic_Int128.lean"),
+    ("sint",        "Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/SInt.lean"),
+    ("toexpr",      "Lean/ToExpr.lean",                                "Lean/ToExpr.lean"),
+    ("toint",       "Init/GrindInstances/ToInt.lean",                  "Init/GrindInstances/ToInt.lean"),
+    ("ringsint",    "Init/GrindInstances/Ring/SInt.lean",              "Init/GrindInstances/Ring/SInt.lean"),
+    ("ringuint",    "Init/GrindInstances/Ring/UInt.lean",              "Init/GrindInstances/Ring/UInt.lean"),
+    ("lemmas",      "Init/Data/SInt/Lemmas.lean",                      "Init/Data/SInt/Lemmas_Int128.lean"),
+]
 
 # ---------------------------------------------------------------------------
 # BasicAux mode: substitutions applied after the standard renaming.
@@ -276,21 +235,6 @@ BASICAUX_SUBS = [
     ("⟨⟨a.toNat, Nat.lt_trans a.toBitVec.isLt (by decide)⟩⟩",
      "⟨BitVec.ofNat 128 a.toNat⟩"),
 ]
-
-UINTBASIC_HEADER = """\
-import Hax.MissingLean.Init.Data.UInt.BasicAux
-
--- Adapted from Init/Data/UInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
-
-UINTLEMMAS_HEADER = """\
-import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.UInt
-
--- Adapted from Init/Data/UInt/Lemmas.lean from the Lean v4.29.0-rc1 source code
-
-set_option autoImplicit true
-open Std
-
-declare_uint_theorems UInt128 128"""
 
 # ---------------------------------------------------------------------------
 # UIntBasic mode: substitutions applied after the standard renaming.
@@ -586,50 +530,46 @@ def split_into_items(lines: list[str]) -> list[str]:
     return items
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate Int128 Lean files from Lean4 Init/Data/SInt sources."
-    )
-    parser.add_argument("input", help="Path to the Lean4 source file")
-    parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
-    parser.add_argument(
-        "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "uintsimproc", "toint", "ringsint", "ringuint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
-        default="lemmas",
-        help=(
-            "lemmas: generate Lemmas_Int128.lean (default); "
-            "basic: generate Basic_Int128.lean; "
-            "toexpr: generate Lean/ToExpr.lean; "
-            "sint: generate BuiltinSimpProcs/SInt.lean; "
-            "uintsimproc: generate BuiltinSimpProcs/UInt.lean; "
-            "toint: generate Init/GrindInstances/ToInt.lean; "
-            "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
-            "ringuint: generate Init/GrindInstances/Ring/UInt.lean; "
-            "prelude: generate Init/Prelude.lean; "
-            "basicaux: generate Init/Data/UInt/BasicAux.lean; "
-            "uintbasic: generate Init/Data/UInt/Basic.lean; "
-            "uintlemmas: generate Init/Data/UInt/Lemmas_UInt128.lean"
-        ),
-    )
-    args = parser.parse_args()
+def find_lean_src() -> Path:
+    """Return the Lean source root for the project's toolchain."""
+    p = Path(__file__).resolve().parent
+    while True:
+        candidate = p / "lean-toolchain"
+        if candidate.exists():
+            version = candidate.read_text().strip()
+            # e.g. "leanprover/lean4:v4.29.0-rc1" -> "leanprover--lean4---v4.29.0-rc1"
+            toolchain_dir = version.replace("/", "--").replace(":", "---")
+            return Path.home() / ".elan" / "toolchains" / toolchain_dir / "src" / "lean"
+        if p.parent == p:
+            raise FileNotFoundError("lean-toolchain not found in any parent directory")
+        p = p.parent
 
-    with open(args.input, encoding="utf-8") as f:
-        raw_lines = [line.rstrip("\n") for line in f]
 
-    if args.mode == "sint":
+def generate(mode: str, raw_lines: list[str]) -> str:
+    """Run the transformation pipeline for *mode* and return the content string."""
+
+    def _with_preamble(preamble: str, body: str) -> str:
+        if preamble:
+            return preamble + "\n\n" + body
+        return body
+
+    if mode == "sint":
         macro_lines = extract_simproc_macro(raw_lines, "declare_sint_simprocs")
         macro_text = "\n".join(macro_lines)
         for old, new in SINT_SUBS:
             macro_text = macro_text.replace(old, new)
-        output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
-    elif args.mode == "uintsimproc":
+        body = macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128"
+        return _with_preamble(SINT_PREAMBLE, body)
+
+    elif mode == "uintsimproc":
         macro_lines = extract_simproc_macro(raw_lines, "declare_uint_simprocs")
         macro_text = "\n".join(macro_lines)
         for old, new in UINTSIMPROC_SUBS:
             macro_text = macro_text.replace(old, new)
-        output = (UINTSIMPROC_HEADER + "\n\n" + macro_text.rstrip()
-                  + "\n\ndeclare_uint_simprocs_ext UInt128\n")
-    elif args.mode == "prelude":
+        body = macro_text.rstrip() + "\n\ndeclare_uint_simprocs_ext UInt128"
+        return _with_preamble(UINTSIMPROC_PREAMBLE, body)
+
+    elif mode == "prelude":
         # Prelude mode: drop extern-only attribute declarations and strip
         # @[extern "..."] decorator lines from definitions.  Then keep only
         # items that define UInt64 itself (not items that merely use UInt64 as
@@ -644,8 +584,9 @@ def main() -> None:
                 item = strip_extern_decorator(item)
                 if is_uint64_primary_definition(item):
                     kept.append(apply_substitutions(item))
-        output = PRELUDE_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
-    elif args.mode == "basicaux":
+        return _with_preamble(PRELUDE_PREAMBLE, "\n\n".join(kept))
+
+    elif mode == "basicaux":
         # BasicAux mode: strip @[extern "..."] decorator lines (all UInt64
         # definitions in this file have extern implementations) and apply
         # BASICAUX_SUBS to fix the body of widening conversions.  No
@@ -661,8 +602,9 @@ def main() -> None:
                 for old, new in BASICAUX_SUBS:
                     item = item.replace(old, new)
                 kept.append(item)
-        output = BASICAUX_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
-    elif args.mode == "ringuint":
+        return _with_preamble(BASICAUX_PREAMBLE, "\n\n".join(kept))
+
+    elif mode == "ringuint":
         # RingUInt mode: extract the UInt64 namespace block and the UInt64 section
         # of the Lean.Grind namespace verbatim, then apply standard substitutions.
         # The item-based pipeline cannot be used here because the namespace wrapper
@@ -672,8 +614,9 @@ def main() -> None:
         grind_lines = extract_grind_section(raw_lines, "UInt64", "USize")
         ns_text = apply_substitutions("\n".join(ns_lines))
         grind_text = apply_substitutions("\n".join(grind_lines))
-        output = RINGUINT_HEADER + "\n\n" + ns_text + "\n\n" + grind_text + "\n"
-    elif args.mode == "uintbasic":
+        return _with_preamble(RINGUINT_PREAMBLE, ns_text + "\n\n" + grind_text)
+
+    elif mode == "uintbasic":
         # UIntBasic mode: strip @[extern "..."] decorators (preserving any
         # co-located attributes such as instance_reducible), drop the two
         # USize↔UInt64 cross-type conversions that are either already in
@@ -694,18 +637,18 @@ def main() -> None:
                 for old, new in UINTBASIC_SUBS:
                     item = item.replace(old, new)
                 kept.append(item)
-        output = UINTBASIC_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
-    else:
-        header = {
-            "lemmas":     LEMMAS_HEADER,
-            "basic":      BASIC_HEADER,
-            "toexpr":     TOEXPR_HEADER,
-            "toint":      TOINT_HEADER,
-            "ringsint":   RINGSINT_HEADER,
-            "uintlemmas": UINTLEMMAS_HEADER,
-        }[args.mode]
+        return _with_preamble(UINTBASIC_PREAMBLE, "\n\n".join(kept))
 
-        # Collect kept items
+    else:
+        preamble = {
+            "lemmas":     LEMMAS_PREAMBLE,
+            "basic":      BASIC_PREAMBLE,
+            "toexpr":     TOEXPR_PREAMBLE,
+            "toint":      TOINT_PREAMBLE,
+            "ringsint":   RINGSINT_PREAMBLE,
+            "uintlemmas": UINTLEMMAS_PREAMBLE,
+        }[mode]
+
         kept: list[str] = []
         for item in split_into_items(raw_lines):
             if (should_keep(item)
@@ -714,14 +657,32 @@ def main() -> None:
                     and not uses_unavailable_typeclass(item)):
                 kept.append(apply_substitutions(item))
 
-        # Assemble output: header, then one blank line between each kept block
-        output = header + "\n\n" + "\n\n".join(kept) + "\n"
+        return _with_preamble(preamble, "\n\n".join(kept))
 
-    if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(output)
-        import sys
-        print(f"Written to {args.output}", file=sys.stderr)
+
+def make_section(upstream_rel: str, hax_rel: str, content: str) -> str:
+    bar = "-- " + "\u2500" * 70
+    return (f"{bar}\n"
+            f"-- Source: {upstream_rel}\n"
+            f"-- Target: Hax/MissingLean/{hax_rel}\n"
+            f"{bar}\n\n"
+            f"{content}")
+
+
+def main() -> None:
+    output_path = sys.argv[1] if len(sys.argv) > 1 else None
+
+    lean_src = find_lean_src()
+    sections = []
+    for mode, upstream_rel, hax_rel in SECTIONS:
+        raw_lines = (lean_src / upstream_rel).read_text(encoding="utf-8").splitlines()
+        content = generate(mode, raw_lines)
+        sections.append(make_section(upstream_rel, hax_rel, content))
+
+    output = "\n\n".join(sections) + "\n"
+    if output_path:
+        Path(output_path).write_text(output, encoding="utf-8")
+        print(f"Written to {output_path}", file=sys.stderr)
     else:
         print(output, end="")
 
