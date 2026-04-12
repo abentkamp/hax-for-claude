@@ -2,11 +2,12 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports nine modes:
+Supports ten modes:
   --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
   --mode sint               Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
+  --mode uintsimproc        Generate BuiltinSimpProcs/UInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean
   --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
   --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
   --mode ringuint           Generate Init/GrindInstances/Ring/UInt.lean from Init/GrindInstances/Ring/UInt.lean
@@ -26,7 +27,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,ringuint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,uintsimproc,toint,ringsint,ringuint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -167,6 +168,15 @@ If no output path is given the result is printed to stdout.
 #    `UInt128.toBitVec_ofNatTruncate_of_lt/le`, `USize.size_dvd_uInt128Size`,
 #    and many cross-type `toUX_ofNatTruncate_of_le` lemmas) are not generated
 #    and must be added manually.
+#
+# --mode uintsimproc  (Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean → BuiltinSimpProcs/UInt.lean)
+# ────────────────────────────────────────────────────────────────────────────────────────────────────
+# 1. The generated file uses the macro approach (declare_uint_simprocs_ext UInt128)
+#    whereas the existing hax file has the declarations written out directly inside
+#    `namespace UInt128`.  Both are functionally equivalent.
+# 2. The USize special block (lines 92–110 of the upstream, with platform-dependent
+#    `numBits` math) is not generated; it handles platform-dependent bit widths
+#    irrelevant to UInt128.
 
 import argparse
 import re
@@ -212,6 +222,14 @@ import Lean
 import Hax.MissingLean.Lean.ToExpr
 
 -- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean from the Lean v4.29.0-rc1 source code
+
+open Lean Meta Simp"""
+
+UINTSIMPROC_HEADER = """\
+import Lean
+import Hax.MissingLean.Lean.ToExpr
+
+-- Adapted from Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean from the Lean v4.29.0-rc1 source code
 
 open Lean Meta Simp"""
 
@@ -296,21 +314,27 @@ SINT_SUBS = [
     ('"declare_sint_simprocs"', '"declare_sint_simprocs_ext"'),
 ]
 
+UINTSIMPROC_SUBS = [
+    ("builtin_dsimproc",        "dsimproc"),
+    ("builtin_simproc",         "simproc"),
+    ('"declare_uint_simprocs"', '"declare_uint_simprocs_ext"'),
+]
 
-def extract_sint_macro(lines: list[str]) -> list[str]:
+
+def extract_simproc_macro(lines: list[str], macro_name: str) -> list[str]:
     """
-    Extract the declare_sint_simprocs macro definition from the upstream file,
-    stopping just before the first invocation (declare_sint_simprocs Int8/16/…).
+    Extract the named macro definition from the upstream file, stopping just
+    before the first invocation (first line starting with '{macro_name} ').
     """
     in_macro = False
     result = []
     for line in lines:
         if not in_macro:
-            if line.startswith('macro "declare_sint_simprocs"'):
+            if line.startswith(f'macro "{macro_name}"'):
                 in_macro = True
                 result.append(line)
         else:
-            if line.startswith("declare_sint_simprocs "):
+            if line.startswith(f"{macro_name} "):
                 break  # first invocation — stop here
             result.append(line)
     return result
@@ -570,13 +594,14 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "ringuint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
+        choices=["lemmas", "basic", "toexpr", "sint", "uintsimproc", "toint", "ringsint", "ringuint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
             "basic: generate Basic_Int128.lean; "
             "toexpr: generate Lean/ToExpr.lean; "
             "sint: generate BuiltinSimpProcs/SInt.lean; "
+            "uintsimproc: generate BuiltinSimpProcs/UInt.lean; "
             "toint: generate Init/GrindInstances/ToInt.lean; "
             "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
             "ringuint: generate Init/GrindInstances/Ring/UInt.lean; "
@@ -592,11 +617,18 @@ def main() -> None:
         raw_lines = [line.rstrip("\n") for line in f]
 
     if args.mode == "sint":
-        macro_lines = extract_sint_macro(raw_lines)
+        macro_lines = extract_simproc_macro(raw_lines, "declare_sint_simprocs")
         macro_text = "\n".join(macro_lines)
         for old, new in SINT_SUBS:
             macro_text = macro_text.replace(old, new)
         output = SINT_HEADER + "\n\n" + macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128\n"
+    elif args.mode == "uintsimproc":
+        macro_lines = extract_simproc_macro(raw_lines, "declare_uint_simprocs")
+        macro_text = "\n".join(macro_lines)
+        for old, new in UINTSIMPROC_SUBS:
+            macro_text = macro_text.replace(old, new)
+        output = (UINTSIMPROC_HEADER + "\n\n" + macro_text.rstrip()
+                  + "\n\ndeclare_uint_simprocs_ext UInt128\n")
     elif args.mode == "prelude":
         # Prelude mode: drop extern-only attribute declarations and strip
         # @[extern "..."] decorator lines from definitions.  Then keep only
