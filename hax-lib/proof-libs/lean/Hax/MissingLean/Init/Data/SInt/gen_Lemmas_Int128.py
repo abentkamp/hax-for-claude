@@ -2,7 +2,7 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports seven modes:
+Supports eight modes:
   --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
@@ -12,6 +12,7 @@ Supports seven modes:
   --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
   --mode basicaux           Generate Init/Data/UInt/BasicAux.lean from Init/Data/UInt/BasicAux.lean
   --mode uintbasic          Generate Init/Data/UInt/Basic.lean    from Init/Data/UInt/Basic.lean
+  --mode uintlemmas         Generate Init/Data/UInt/Lemmas_UInt128.lean from Init/Data/UInt/Lemmas.lean
 
 Strategy:
   1. Split the source file into items, each starting at an unindented line.
@@ -24,7 +25,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux,uintbasic}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -139,6 +140,26 @@ If no output path is given the result is printed to stdout.
 #    instance are generated without their upstream `set_option linter.*` wrappers
 #    (those lines contain no "UInt64" and are dropped by should_keep).
 #    The generated file may trigger linter warnings at use sites.
+#
+# --mode uintlemmas  (Init/Data/UInt/Lemmas.lean → Init/Data/UInt/Lemmas_UInt128.lean)
+# ─────────────────────────────────────────────────────────────────────────────────────
+# 1. `UInt128.toNat_toUInt64` has no upstream counterpart (the macro only
+#    generates `toNat_toUInt64` for types with fewer than 64 bits, where the
+#    result is lossless).  Must be added manually:
+#      @[simp] theorem UInt128.toNat_toUInt64 (x : UInt128) :
+#          x.toUInt64.toNat = x.toNat % 2 ^ 64 := (rfl)
+# 2. Widening theorems (`X.toUInt128`-based items, e.g. `USize.toNat_toUInt128`,
+#    `UInt8.toFin_toUInt128`, `UInt8.toBitVec_toUInt128`, `UInt64.ofFin_uXToFin`,
+#    `UInt128.ofBitVec_uXToBitVec` widening, etc.) are generated as active
+#    theorems, but the hax file comments them out.  The `(rfl)` proofs for
+#    the widening direction may also be wrong because `X.toUInt128` uses
+#    `BitVec.ofNat 128 x.toNat` whose `toNat` only reduces modulo 2^128
+#    propositionally, not definitionally.
+# 3. Hax-specific theorems not in the upstream UInt64 block (e.g.
+#    `UInt128.toNat_ofNatTruncate_of_lt/le`, `UInt128.toFin_ofNatTruncate_of_lt/le`,
+#    `UInt128.toBitVec_ofNatTruncate_of_lt/le`, `USize.size_dvd_uInt128Size`,
+#    and many cross-type `toUX_ofNatTruncate_of_le` lemmas) are not generated
+#    and must be added manually.
 
 import argparse
 import re
@@ -226,6 +247,16 @@ UINTBASIC_HEADER = """\
 import Hax.MissingLean.Init.Data.UInt.BasicAux
 
 -- Adapted from Init/Data/UInt/Basic.lean from the Lean v4.29.0-rc1 source code"""
+
+UINTLEMMAS_HEADER = """\
+import Hax.MissingLean.Lean.Tactic.Simp.BuiltinSimpProcs.UInt
+
+-- Adapted from Init/Data/UInt/Lemmas.lean from the Lean v4.29.0-rc1 source code
+
+set_option autoImplicit true
+open Std
+
+declare_uint_theorems UInt128 128"""
 
 # ---------------------------------------------------------------------------
 # UIntBasic mode: substitutions applied after the standard renaming.
@@ -479,7 +510,7 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux", "uintbasic"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
@@ -490,7 +521,8 @@ def main() -> None:
             "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
             "prelude: generate Init/Prelude.lean; "
             "basicaux: generate Init/Data/UInt/BasicAux.lean; "
-            "uintbasic: generate Init/Data/UInt/Basic.lean"
+            "uintbasic: generate Init/Data/UInt/Basic.lean; "
+            "uintlemmas: generate Init/Data/UInt/Lemmas_UInt128.lean"
         ),
     )
     args = parser.parse_args()
@@ -561,11 +593,12 @@ def main() -> None:
         output = UINTBASIC_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
     else:
         header = {
-            "lemmas":   LEMMAS_HEADER,
-            "basic":    BASIC_HEADER,
-            "toexpr":   TOEXPR_HEADER,
-            "toint":    TOINT_HEADER,
-            "ringsint": RINGSINT_HEADER,
+            "lemmas":     LEMMAS_HEADER,
+            "basic":      BASIC_HEADER,
+            "toexpr":     TOEXPR_HEADER,
+            "toint":      TOINT_HEADER,
+            "ringsint":   RINGSINT_HEADER,
+            "uintlemmas": UINTLEMMAS_HEADER,
         }[args.mode]
 
         # Collect kept items
