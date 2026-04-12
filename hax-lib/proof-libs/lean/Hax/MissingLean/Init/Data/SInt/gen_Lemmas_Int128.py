@@ -161,6 +161,86 @@ If no output path is given the result is printed to stdout.
 #    `numBits` math) is not generated; it handles platform-dependent bit widths
 #    irrelevant to UInt128.
 
+# ---------------------------------------------------------------------------
+# Manual edits required in the combined Generated.lean file (Lean v4.29.0-rc1)
+# ---------------------------------------------------------------------------
+# Run this script then apply the following edits to make the combined file compile.
+#
+# [uintbasic] instance UInt128.instOfNat / Int128.instOfNat — explicit (n : Nat)
+#   The bare-n form `instance UInt128.instOfNat : OfNat UInt128 n` fails because
+#   `n` is not auto-bound as `Nat` in this context.  Add `(n : Nat)` explicitly.
+#
+# [uintbasic] HMod UInt128 Nat UInt128 — suppress deprecation warning
+#   Wrap the instance with `set_option linter.deprecated false in` (the upstream
+#   uses this wrapper, but it is dropped by should_keep since it contains no
+#   "UInt64").
+#
+# [uintbasic] Hashable Int8/Int16/Int32/ISize — remove wrong instances
+#   The generator keeps the Hashable instances for Int8/16/32/ISize from
+#   Basic.lean (they reference .toUInt64, hence pass should_keep).  After
+#   renaming they reference .toUInt128 (wrong return type for hash, which must
+#   be UInt64).  Remove these four instances (they are already defined upstream
+#   via .toUInt64).
+#
+# [uintbasic] Hashable Int128 — fix hash return type
+#   The generated `hash i := i.toUInt128` returns UInt128, not UInt64.
+#   Replace with `hash i := hash i.toInt`.
+#
+# [uintbasic] Hashable ISize — remove wrong instance
+#   The generated instance uses `i.toUSize.toUInt128` (USize.toUInt128 absent).
+#   Remove it; ISize's Hashable is already defined upstream.
+#
+# [uintlemmas] Add UInt128.toUSize before declare_uint_theorems
+#   The uintbasic section intentionally skips UInt64.toUSize → UInt128.toUSize
+#   (drop logic: lines 633–635 of the script).  But declare_uint_theorems (macro
+#   in the uintlemmas section) calls UInt128.toUSize.  Add manually:
+#     def UInt128.toUSize (a : UInt128) : USize := a.toNat.toUSize
+#
+# [uintlemmas] USize.toNat_mod_uInt128Size — wrong bound in proof
+#   Generated proof uses `Nat.mod_eq_of_lt n.toNat_lt` (USize bound ≤ 2^64).
+#   UInt128.size is 2^128, so the correct proof is:
+#     Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
+#
+# [uintlemmas] UInt128.toUSize_ofNatTruncate_of_le — proof needs native_decide
+#   The generated `USize.toNat.inj (by simp [...])` leaves goal
+#   `(2^128 - 1) % 2^System.Platform.numBits = USize.size - 1`
+#   which simp cannot close (System.Platform.numBits is opaque).
+#   Fix: append `; native_decide` after the simp.
+#
+# [uintlemmas] UInt128.neg_one_eq and UInt128.sub_eq_add_mul — wrong literal
+#   LITERAL_SUBS replaces "64" → "128" but misses the concrete value
+#   18446744073709551615 (= 2^64 - 1).  The Int128 equivalent is
+#   340282366920938463463374607431768211455 (= 2^128 - 1).
+#   Replace both occurrences of 18446744073709551615 with that value.
+#
+# [uintlemmas] UInt32.neg_inj / neg_ne_zero / not_lt_zero / zero_le — duplicate decls
+#   The generator pairs each new UInt128 theorem with its UInt32 source verbatim.
+#   For `neg_inj`, `neg_ne_zero`, `not_lt_zero`, `zero_le` these UInt32 theorems
+#   already exist in Lean core → "already declared" error.  Remove the four UInt32
+#   declarations, keeping only the UInt128 versions.
+#
+# [uintlemmas] Many theorems involving USize.toUInt128 — comment out
+#   USize.toUInt128 is not generated (intentionally absent from the hax project).
+#   All theorems whose statement or proof references USize.toUInt128 must be
+#   commented out.  See the reference Hax/MissingLean/Init/Data/UInt/Lemmas_UInt128.lean
+#   for the canonical list.
+#
+# [uintlemmas] Many UIntN.toUInt128 widening theorems — comment out
+#   The generator produces theorems like UInt8.toUInt8_toUInt128, toFin_toUInt128,
+#   toBitVec_toUInt128, and arithmetic conversions (add, mul, lt, le, eq, neg, sub)
+#   that rely on a missing `UIntN.toNat_toUInt128` simp lemma or use wrong setWidth
+#   (LITERAL_SUBS replaces "BitVec 64" → "BitVec 128" but misses "setWidth 64" →
+#   "setWidth 128").  Also rfl fails for cross-struct UInt-to-UInt128 conversions
+#   (UInt128 uses BitVec internally, UIntN uses Fin).  Comment them all out; see
+#   the reference Lemmas_UInt128.lean for the canonical subset that is kept.
+#
+# [uintsimproc / sint] declare_uint/sint_simprocs_ext macro — DOES NOT WORK
+#   Correction to the note above: dsimproc/simproc declarations inside a macro
+#   quotation `\`(...)` produce "Unknown attribute" errors in Lean v4.29.0-rc1.
+#   The macro approach is NOT functionally equivalent; it silently silences
+#   registration.  Replace the macro call with a direct inline namespace block
+#   (matching the approach in Hax/MissingLean/Lean/Tactic/Simp/BuiltinSimpProcs/).
+
 from pathlib import Path
 import re
 import sys
@@ -213,15 +293,15 @@ SECTIONS: list[tuple[str, str, str]] = [
     ("prelude",     "Init/Prelude.lean",                               "Init/Prelude.lean"),
     ("basicaux",    "Init/Data/UInt/BasicAux.lean",                    "Init/Data/UInt/BasicAux.lean"),
     ("uintbasic",   "Init/Data/UInt/Basic.lean",                       "Init/Data/UInt/Basic.lean"),
-    ("uintsimproc", "Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/UInt.lean"),
-    ("uintlemmas",  "Init/Data/UInt/Lemmas.lean",                      "Init/Data/UInt/Lemmas_UInt128.lean"),
     ("basic",       "Init/Data/SInt/Basic.lean",                       "Init/Data/SInt/Basic_Int128.lean"),
-    ("sint",        "Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/SInt.lean"),
     ("toexpr",      "Lean/ToExpr.lean",                                "Lean/ToExpr.lean"),
+    ("uintsimproc", "Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/UInt.lean"),
+    ("sint",        "Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean", "Lean/Tactic/Simp/BuiltinSimpProcs/SInt.lean"),
+    ("uintlemmas",  "Init/Data/UInt/Lemmas.lean",                      "Init/Data/UInt/Lemmas_UInt128.lean"),
+    ("lemmas",      "Init/Data/SInt/Lemmas.lean",                      "Init/Data/SInt/Lemmas_Int128.lean"),
     ("toint",       "Init/GrindInstances/ToInt.lean",                  "Init/GrindInstances/ToInt.lean"),
     ("ringsint",    "Init/GrindInstances/Ring/SInt.lean",              "Init/GrindInstances/Ring/SInt.lean"),
     ("ringuint",    "Init/GrindInstances/Ring/UInt.lean",              "Init/GrindInstances/Ring/UInt.lean"),
-    ("lemmas",      "Init/Data/SInt/Lemmas.lean",                      "Init/Data/SInt/Lemmas_Int128.lean"),
 ]
 
 # ---------------------------------------------------------------------------
