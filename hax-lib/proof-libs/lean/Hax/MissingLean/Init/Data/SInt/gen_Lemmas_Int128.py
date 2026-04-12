@@ -2,13 +2,14 @@
 """
 Generate Int128 Lean files from Lean4's Init/Data/SInt source files.
 
-Supports eight modes:
+Supports nine modes:
   --mode lemmas   (default) Generate Lemmas_Int128.lean from Init/Data/SInt/Lemmas.lean
   --mode basic              Generate Basic_Int128.lean  from Init/Data/SInt/Basic.lean
   --mode toexpr             Generate Lean/ToExpr.lean   from Lean/ToExpr.lean
   --mode sint               Generate BuiltinSimpProcs/SInt.lean from Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean
   --mode toint              Generate Init/GrindInstances/ToInt.lean from Init/GrindInstances/ToInt.lean
   --mode ringsint           Generate Init/GrindInstances/Ring/SInt.lean from Init/GrindInstances/Ring/SInt.lean
+  --mode ringuint           Generate Init/GrindInstances/Ring/UInt.lean from Init/GrindInstances/Ring/UInt.lean
   --mode prelude            Generate Init/Prelude.lean from Init/Prelude.lean
   --mode basicaux           Generate Init/Data/UInt/BasicAux.lean from Init/Data/UInt/BasicAux.lean
   --mode uintbasic          Generate Init/Data/UInt/Basic.lean    from Init/Data/UInt/Basic.lean
@@ -25,7 +26,7 @@ Strategy:
   4. Prepend the hard-coded header for the chosen mode.
 
 Usage:
-    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
+    python3 gen_Lemmas_Int128.py [--mode {lemmas,basic,toexpr,sint,toint,ringsint,ringuint,prelude,basicaux,uintbasic,uintlemmas}] <input.lean> [output.lean]
 
 If no output path is given the result is printed to stdout.
 """
@@ -141,6 +142,12 @@ If no output path is given the result is printed to stdout.
 #    (those lines contain no "UInt64" and are dropped by should_keep).
 #    The generated file may trigger linter warnings at use sites.
 #
+# --mode ringuint  (Init/GrindInstances/Ring/UInt.lean → Init/GrindInstances/Ring/UInt.lean)
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# 1. The `-- A better proof would be welcome!` comment inside `intCast_ofNat` is
+#    preserved in the generated output (verbatim from upstream). The existing hax
+#    file also keeps this comment, so no manual fix is needed.
+#
 # --mode uintlemmas  (Init/Data/UInt/Lemmas.lean → Init/Data/UInt/Lemmas_UInt128.lean)
 # ─────────────────────────────────────────────────────────────────────────────────────
 # 1. `UInt128.toNat_toUInt64` has no upstream counterpart (the macro only
@@ -222,6 +229,15 @@ import Hax.MissingLean.Init.GrindInstances.ToInt
 -- Adapted from Init/GrindInstances/Ring/SInt.lean from the Lean v4.29.0-rc1 source code
 
 open Lean Grind"""
+
+RINGUINT_HEADER = """\
+import Hax.MissingLean.Init.GrindInstances.ToInt
+
+-- Adapted from Init/GrindInstances/Ring/UInt.lean from the Lean v4.29.0-rc1 source code
+
+open Lean Grind
+
+set_option autoImplicit true"""
 
 # Leading \n produces the blank first line present in the existing hax file.
 PRELUDE_HEADER = "\n-- Adapted from Init/Prelude.lean from the Lean v4.29.0-rc1 source code"
@@ -455,6 +471,50 @@ def is_uint64_primary_definition(item: str) -> bool:
             (first.startswith("instance : ") and "UInt64" in first))
 
 
+def extract_namespace_block(lines: list[str], typename: str) -> list[str]:
+    """
+    Return all lines from 'namespace {typename}' to 'end {typename}' inclusive,
+    stripping trailing blank lines.
+    """
+    start, end = None, None
+    for i, line in enumerate(lines):
+        if line == f"namespace {typename}":
+            start = i
+        elif start is not None and line == f"end {typename}":
+            end = i
+            break
+    if start is None or end is None:
+        return []
+    result = list(lines[start:end + 1])
+    while result and not result[-1].strip():
+        result.pop()
+    return result
+
+
+def extract_grind_section(lines: list[str], typename: str, next_typename: str) -> list[str]:
+    """
+    Return lines for {typename} from the Lean.Grind namespace section.
+    Starts at the 'attribute [local instance] {typename}.natCast {typename}.intCast'
+    line and stops just before {next_typename}'s equivalent line or 'end Lean.Grind'.
+    Trailing blank lines are stripped.
+    """
+    result = []
+    in_section = False
+    for line in lines:
+        if not in_section:
+            if f"{typename}.natCast {typename}.intCast" in line:
+                in_section = True
+        else:
+            if (f"{next_typename}.natCast {next_typename}.intCast" in line
+                    or line == "end Lean.Grind"):
+                break
+        if in_section:
+            result.append(line)
+    while result and not result[-1].strip():
+        result.pop()
+    return result
+
+
 def split_into_items(lines: list[str]) -> list[str]:
     """
     Split lines into top-level items.  Each item starts at an unindented
@@ -510,7 +570,7 @@ def main() -> None:
     parser.add_argument("output", nargs="?", help="Output path (default: stdout)")
     parser.add_argument(
         "--mode",
-        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
+        choices=["lemmas", "basic", "toexpr", "sint", "toint", "ringsint", "ringuint", "prelude", "basicaux", "uintbasic", "uintlemmas"],
         default="lemmas",
         help=(
             "lemmas: generate Lemmas_Int128.lean (default); "
@@ -519,6 +579,7 @@ def main() -> None:
             "sint: generate BuiltinSimpProcs/SInt.lean; "
             "toint: generate Init/GrindInstances/ToInt.lean; "
             "ringsint: generate Init/GrindInstances/Ring/SInt.lean; "
+            "ringuint: generate Init/GrindInstances/Ring/UInt.lean; "
             "prelude: generate Init/Prelude.lean; "
             "basicaux: generate Init/Data/UInt/BasicAux.lean; "
             "uintbasic: generate Init/Data/UInt/Basic.lean; "
@@ -569,6 +630,17 @@ def main() -> None:
                     item = item.replace(old, new)
                 kept.append(item)
         output = BASICAUX_HEADER + "\n\n" + "\n\n".join(kept) + "\n"
+    elif args.mode == "ringuint":
+        # RingUInt mode: extract the UInt64 namespace block and the UInt64 section
+        # of the Lean.Grind namespace verbatim, then apply standard substitutions.
+        # The item-based pipeline cannot be used here because the namespace wrapper
+        # lines and the `attribute [local instance] natCast intCast` line lack
+        # "UInt64" and would be dropped by should_keep.
+        ns_lines = extract_namespace_block(raw_lines, "UInt64")
+        grind_lines = extract_grind_section(raw_lines, "UInt64", "USize")
+        ns_text = apply_substitutions("\n".join(ns_lines))
+        grind_text = apply_substitutions("\n".join(grind_lines))
+        output = RINGUINT_HEADER + "\n\n" + ns_text + "\n\n" + grind_text + "\n"
     elif args.mode == "uintbasic":
         # UIntBasic mode: strip @[extern "..."] decorators (preserving any
         # co-located attributes such as instance_reducible), drop the two
