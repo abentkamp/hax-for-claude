@@ -187,14 +187,38 @@ If no output path is given the result is printed to stdout.
 #   Replace with `hash i := hash i.toInt`.
 #
 # [uintbasic] Hashable ISize — remove wrong instance
-#   The generated instance uses `i.toUSize.toUInt128` (USize.toUInt128 absent).
-#   Remove it; ISize's Hashable is already defined upstream.
+#   The generated instance uses `i.toUSize.toUInt128` (USize.toUInt128 absent at
+#   generation time).  Remove it; ISize's Hashable is already defined upstream.
+#
+# [basicaux] USize.toUInt128 — add manually after UInt32.toUInt128
+#   The generator drops `def USize.toUInt64` because its body `⟨a.val⟩` is wrong
+#   for UInt128 (UInt128 uses BitVec internally, not Fin).  Add manually:
+#     def USize.toUInt128 (a : USize) : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
+#   This mirrors the existing UInt8/16/32.toUInt128 definitions.
 #
 # [uintlemmas] Add UInt128.toUSize before declare_uint_theorems
 #   The uintbasic section intentionally skips UInt64.toUSize → UInt128.toUSize
 #   (drop logic: lines 633–635 of the script).  But declare_uint_theorems (macro
 #   in the uintlemmas section) calls UInt128.toUSize.  Add manually:
 #     def UInt128.toUSize (a : UInt128) : USize := a.toNat.toUSize
+#
+# [uintlemmas] UIntN.toNat_toUInt128 simp lemmas — add after UInt128.toUSize
+#   `declare_uint_theorems` only generates `toNat_toUInt64` for types with nbits ≤ 32;
+#   there is no `toNat_toUInt128` branch.  Add four simp lemmas manually:
+#     @[simp] theorem UInt8.toNat_toUInt128 (n : UInt8) : n.toUInt128.toNat = n.toNat :=
+#       Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
+#     @[simp] theorem UInt16.toNat_toUInt128 (n : UInt16) : n.toUInt128.toNat = n.toNat :=
+#       Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
+#     @[simp] theorem UInt32.toNat_toUInt128 (n : UInt32) : n.toUInt128.toNat = n.toNat :=
+#       Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
+#     @[simp] theorem USize.toNat_toUInt128 (n : USize) : n.toUInt128.toNat = n.toNat :=
+#       Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le n.toNat_lt USize.size_le_uint128Size)
+#   Proof: n.toUInt128.toNat = n.toNat % 2^128 by def; Nat.mod_eq_of_lt closes it
+#   since n.toNat < UIntN.size ≤ 2^128.  For USize, `by decide` fails because
+#   USize.size is platform-dependent (2^32 or 2^64); use the already-proved
+#   USize.size_le_uint128Size lemma instead.
+#   These two manual additions (USize.toUInt128 + toNat_toUInt128 simp lemmas) unlock
+#   ~100 theorems that were otherwise unprovable.
 #
 # [uintlemmas] USize.toNat_mod_uInt128Size — wrong bound in proof
 #   Generated proof uses `Nat.mod_eq_of_lt n.toNat_lt` (USize bound ≤ 2^64).
@@ -219,20 +243,24 @@ If no output path is given the result is printed to stdout.
 #   already exist in Lean core → "already declared" error.  Remove the four UInt32
 #   declarations, keeping only the UInt128 versions.
 #
-# [uintlemmas] Many theorems involving USize.toUInt128 — comment out
-#   USize.toUInt128 is not generated (intentionally absent from the hax project).
-#   All theorems whose statement or proof references USize.toUInt128 must be
-#   commented out.  See the reference Hax/MissingLean/Init/Data/UInt/Lemmas_UInt128.lean
-#   for the canonical list.
-#
-# [uintlemmas] Many UIntN.toUInt128 widening theorems — comment out
+# [uintlemmas] Many UIntN.toUInt128 widening theorems — proof fixes required
 #   The generator produces theorems like UInt8.toUInt8_toUInt128, toFin_toUInt128,
 #   toBitVec_toUInt128, and arithmetic conversions (add, mul, lt, le, eq, neg, sub)
-#   that rely on a missing `UIntN.toNat_toUInt128` simp lemma or use wrong setWidth
-#   (LITERAL_SUBS replaces "BitVec 64" → "BitVec 128" but misses "setWidth 64" →
-#   "setWidth 128").  Also rfl fails for cross-struct UInt-to-UInt128 conversions
-#   (UInt128 uses BitVec internally, UIntN uses Fin).  Comment them all out; see
-#   the reference Lemmas_UInt128.lean for the canonical subset that is kept.
+#   that need manual proof adjustments:
+#   (a) `rfl` fails for cross-struct UInt-to-UInt128 conversions: UInt128 uses BitVec
+#       internally while UIntN uses Fin, so cross-type constructors like ofNatLT and
+#       toUInt128 are not definitionally equal even for the same value.  Fix:
+#       replace `rfl` with `UInt128.toNat.inj (by simp)` (compares Nat values instead).
+#   (b) For toFin theorems use `Fin.ext (by simp [...])` instead of `rfl`.
+#   (c) For toBitVec theorems use `BitVec.eq_of_toNat_eq (by simp [...])` instead.
+#   (d) setWidth substitution: LITERAL_SUBS replaces "BitVec 64" → "BitVec 128" but
+#       misses "setWidth 64" → "setWidth 128" in some proofs; fix manually.
+#   After adding USize.toUInt128 and the UIntN.toNat_toUInt128 simp lemmas (see above),
+#   essentially all these theorems become provable.  A few theorems remain commented out:
+#   - UInt128.toUSize_neg: simp cannot prove BitVec.setWidth(-x) = -BitVec.setWidth(x)
+#   - UInt128.toUSize_sub: depends on UInt128.toUSize_neg
+#   - USize.ofNat_uInt128Size_sub_one: needs `cases USize.size_eq`; not in reference
+#   These three are not present in the reference Lemmas_UInt128.lean and stay omitted.
 #
 # [uintsimproc / sint] declare_uint/sint_simprocs_ext macro — DOES NOT WORK
 #   Correction to the note above: dsimproc/simproc declarations inside a macro
