@@ -68,7 +68,7 @@ def UInt8.toUSize32 (a : UInt8) : USize32 := ⟨⟨a.toNat, Nat.lt_trans a.toBit
 
 def UInt16.toUSize32 (a : UInt16) : USize32 := ⟨⟨a.toNat, Nat.lt_trans a.toBitVec.isLt (by decide)⟩⟩
 
-instance USize32.instOfNat : OfNat USize32 n := ⟨USize32.ofNat n⟩
+instance USize32.instOfNat (n : Nat) : OfNat USize32 n := ⟨USize32.ofNat n⟩
 
 theorem USize32.ofNatLT_lt_of_lt {n m : Nat} (h1 : n < USize32.size) (h2 : m < USize32.size) :
      n < m → USize32.ofNatLT n h1 < USize32.ofNat m := by
@@ -135,6 +135,7 @@ instance : Pow USize32 Nat   := ⟨USize32.pow⟩
 
 instance : Mod USize32       := ⟨USize32.mod⟩
 
+set_option linter.deprecated false in
 instance : HMod USize32 Nat USize32 := ⟨USize32.modn⟩
 
 instance : Div USize32       := ⟨USize32.div⟩
@@ -222,7 +223,7 @@ instance : ReprAtom ISize32 := ⟨⟩
 instance : Hashable ISize32 where
   hash i := i.toUSize32.toUInt64
 
-instance ISize32.instOfNat : OfNat ISize32 n := ⟨ISize32.ofNat n⟩
+instance ISize32.instOfNat (n : Nat) : OfNat ISize32 n := ⟨ISize32.ofNat n⟩
 
 instance ISize32.instNeg : Neg ISize32 where
   neg := ISize32.neg

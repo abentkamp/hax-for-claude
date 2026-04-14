@@ -61,7 +61,7 @@ def UInt16.toUSize64 (a : UInt16) : USize64 := ⟨⟨a.toNat, Nat.lt_trans a.toB
 
 def UInt32.toUSize64 (a : UInt32) : USize64 := ⟨⟨a.toNat, Nat.lt_trans a.toBitVec.isLt (by decide)⟩⟩
 
-instance USize64.instOfNat : OfNat USize64 n := ⟨USize64.ofNat n⟩
+instance USize64.instOfNat (n : Nat) : OfNat USize64 n := ⟨USize64.ofNat n⟩
 
 -- ──────────────────────────────────────────────────────────────────────
 -- Source: Init/Data/UInt/Basic.lean
@@ -114,6 +114,7 @@ instance : Pow USize64 Nat   := ⟨USize64.pow⟩
 
 instance : Mod USize64       := ⟨USize64.mod⟩
 
+set_option linter.deprecated false in
 instance : HMod USize64 Nat USize64 := ⟨USize64.modn⟩
 
 instance : Div USize64       := ⟨USize64.div⟩
@@ -176,14 +177,8 @@ structure ISize64 where
   -/
   toUSize64 : USize64
 
-instance : Hashable Int8 where
-  hash i := i.toUInt8.toUSize64
-
-instance : Hashable Int16 where
-  hash i := i.toUInt16.toUSize64
-
-instance : Hashable Int32 where
-  hash i := i.toUInt32.toUSize64
+-- Hashable Int8/Int16/Int32 are already defined upstream via toUInt64;
+-- the toUSize64 substitution would produce wrong types (USize64 ≠ UInt64).
 
 abbrev ISize64.size : Nat := 18446744073709551616
 
@@ -231,9 +226,9 @@ instance : Repr ISize64 where
 instance : ReprAtom ISize64 := ⟨⟩
 
 instance : Hashable ISize64 where
-  hash i := i.toUSize64
+  hash i := hash i.toInt
 
-instance ISize64.instOfNat : OfNat ISize64 n := ⟨ISize64.ofNat n⟩
+instance ISize64.instOfNat (n : Nat) : OfNat ISize64 n := ⟨ISize64.ofNat n⟩
 
 instance ISize64.instNeg : Neg ISize64 where
   neg := ISize64.neg
@@ -349,8 +344,8 @@ def ISize.toISize64 (a : ISize) : ISize64 := ⟨⟨a.toBitVec.signExtend 64⟩�
 
 def ISize64.toISize (a : ISize64) : ISize := ⟨⟨a.toBitVec.signExtend System.Platform.numBits⟩⟩
 
-instance : Hashable ISize where
-  hash i := i.toUSize.toUSize64
+-- Hashable ISize is already defined upstream via toUSize.toUInt64;
+-- toUSize64 returns USize64, not UInt64.
 
 -- ──────────────────────────────────────────────────────────────────────
 -- Source: Lean/ToExpr.lean

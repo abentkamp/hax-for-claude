@@ -17,9 +17,11 @@ Usage:
 
 
 # ---------------------------------------------------------------------------
-# Manual edits required in the combined Generated.lean file (Lean v4.29.0-rc1)
+# Manual edits required after running this script (Lean v4.29.0-rc1)
 # ---------------------------------------------------------------------------
-# Run this script then apply the following edits to make the combined file compile.
+# Run this script then apply the following edits to each generated file.
+#
+# ─── Generated.lean (UInt128 / Int128) ───────────────────────────────────────
 #
 # [uintbasic] instance UInt128.instOfNat / Int128.instOfNat — explicit (n : Nat)
 #   The bare-n form `instance UInt128.instOfNat : OfNat UInt128 n` fails because
@@ -30,12 +32,11 @@ Usage:
 #   uses this wrapper, but it is dropped by should_keep since it contains no
 #   "UInt64").
 #
-# [uintbasic] Hashable Int8/Int16/Int32/ISize — remove wrong instances
-#   The generator keeps the Hashable instances for Int8/16/32/ISize from
-#   Basic.lean (they reference .toUInt64, hence pass should_keep).  After
-#   renaming they reference .toUInt128 (wrong return type for hash, which must
-#   be UInt64).  Remove these four instances (they are already defined upstream
-#   via .toUInt64).
+# [uintbasic] Hashable Int8/Int16/Int32 — remove wrong instances
+#   The generator keeps the Hashable instances for Int8/16/32 from Basic.lean
+#   (they reference .toUInt64, hence pass should_keep).  After renaming they
+#   reference .toUInt128 (wrong return type for hash, which must be UInt64).
+#   Remove these three instances (they are already defined upstream via .toUInt64).
 #
 # [uintbasic] Hashable Int128 — fix hash return type
 #   The generated `hash i := i.toUInt128` returns UInt128, not UInt64.
@@ -52,9 +53,9 @@ Usage:
 #   This mirrors the existing UInt8/16/32.toUInt128 definitions.
 #
 # [uintlemmas] Add UInt128.toUSize before declare_uint_theorems
-#   The uintbasic section intentionally skips UInt64.toUSize → UInt128.toUSize
-#   (drop logic: lines 633–635 of the script).  But declare_uint_theorems (macro
-#   in the uintlemmas section) calls UInt128.toUSize.  Add manually:
+#   The uintbasic section intentionally drops UInt64.toUSize → UInt128.toUSize
+#   (change_bits=True drop logic).  But declare_uint_theorems (macro in the
+#   uintlemmas section) calls UInt128.toUSize.  Add manually:
 #     def UInt128.toUSize (a : UInt128) : USize := a.toNat.toUSize
 #
 # [uintlemmas] UIntN.toNat_toUInt128 simp lemmas — add after UInt128.toUSize
@@ -76,9 +77,11 @@ Usage:
 #   ~100 theorems that were otherwise unprovable.
 #
 # [uintlemmas] USize.toNat_mod_uInt128Size — wrong bound in proof
-#   Generated proof uses `Nat.mod_eq_of_lt n.toNat_lt` (USize bound ≤ 2^64).
-#   UInt128.size is 2^128, so the correct proof is:
-#     Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
+#   Generated proof uses `Nat.mod_eq_of_lt n.toNat_lt` (only proves n.toNat <
+#   USize.size, not < UInt128.size).  Fix:
+#     Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by cases USize.size_eq <;> simp_all +decide))
+#   Note: `by decide` cannot close `USize.size < UInt128.size` because USize.size is
+#   opaque; the case split on USize.size_eq is required.
 #
 # [uintlemmas] UInt128.toUSize_ofNatTruncate_of_le — proof needs native_decide
 #   The generated `USize.toNat.inj (by simp [...])` leaves goal
@@ -87,7 +90,7 @@ Usage:
 #   Fix: append `; native_decide` after the simp.
 #
 # [uintlemmas] UInt128.neg_one_eq and UInt128.sub_eq_add_mul — wrong literal
-#   LITERAL_SUBS replaces "64" → "128" but misses the concrete value
+#   make_regex_subs replaces "2 ^ 64" → "2 ^ 128" but misses the concrete value
 #   18446744073709551615 (= 2^64 - 1).  The Int128 equivalent is
 #   340282366920938463463374607431768211455 (= 2^128 - 1).
 #   Replace both occurrences of 18446744073709551615 with that value.
@@ -95,23 +98,21 @@ Usage:
 # [uintlemmas] UInt32.neg_inj / neg_ne_zero / not_lt_zero / zero_le — duplicate decls
 #   The generator pairs each new UInt128 theorem with its UInt32 source verbatim.
 #   For `neg_inj`, `neg_ne_zero`, `not_lt_zero`, `zero_le` these UInt32 theorems
-#   already exist in Lean core → "already declared" error.  Remove the four UInt32
-#   declarations, keeping only the UInt128 versions.
+#   already exist in Lean core → "already declared" error.  Comment out the four
+#   UInt32 declarations, keeping only the UInt128 versions.
 #
 # [uintlemmas] Many UIntN.toUInt128 widening theorems — proof fixes required
-#   The generator produces theorems like UInt8.toUInt8_toUInt128, toFin_toUInt128,
-#   toBitVec_toUInt128, and arithmetic conversions (add, mul, lt, le, eq, neg, sub)
-#   that need manual proof adjustments:
+#   The generator produces theorems like toFin_toUInt128, toBitVec_toUInt128,
+#   ofNatLT_uIntNToNat, ofFin_uIntNToFin, ofBitVec_uIntNToBitVec that need fixes:
 #   (a) `rfl` fails for cross-struct UInt-to-UInt128 conversions: UInt128 uses BitVec
-#       internally while UIntN uses Fin, so cross-type constructors like ofNatLT and
-#       toUInt128 are not definitionally equal even for the same value.  Fix:
-#       replace `rfl` with `UInt128.toNat.inj (by simp)` (compares Nat values instead).
+#       internally while UIntN uses Fin, so cross-type constructors are not
+#       definitionally equal.  Replace `rfl` with `UInt128.toNat.inj (by simp)`.
 #   (b) For toFin theorems use `Fin.ext (by simp [...])` instead of `rfl`.
 #   (c) For toBitVec theorems use `BitVec.eq_of_toNat_eq (by simp [...])` instead.
-#   (d) setWidth substitution: LITERAL_SUBS replaces "BitVec 64" → "BitVec 128" but
-#       misses "setWidth 64" → "setWidth 128" in some proofs; fix manually.
+#   (d) setWidth: make_literal_subs replaces "BitVec 64" → "BitVec 128" but misses
+#       "setWidth 64" → "setWidth 128" in theorem bodies; fix manually.
 #   After adding USize.toUInt128 and the UIntN.toNat_toUInt128 simp lemmas (see above),
-#   essentially all these theorems become provable.  A few theorems remain commented out:
+#   essentially all these theorems become provable.  A few remain commented out:
 #   - UInt128.toUSize_neg: simp cannot prove BitVec.setWidth(-x) = -BitVec.setWidth(x)
 #   - UInt128.toUSize_sub: depends on UInt128.toUSize_neg
 #   - USize.ofNat_uInt128Size_sub_one: needs `cases USize.size_eq`; not in reference
@@ -121,6 +122,41 @@ Usage:
 #   dsimproc/simproc declarations inside a macro quotation `(...)` produce
 #   "Unknown attribute" errors in Lean v4.29.0-rc1.  The script therefore expands
 #   the macro body inline (see expand_simproc_macro_body) instead of calling it.
+#
+# ─── Generated_USize64.lean (USize64 / ISize64) ─────────────────────────────
+#
+# [uintbasic] instance USize64.instOfNat / ISize64.instOfNat — explicit (n : Nat)
+#   Same issue as Int128: add `(n : Nat)` to both instOfNat instances.
+#
+# [uintbasic] HMod USize64 Nat USize64 — suppress deprecation warning
+#   Same as Int128: wrap with `set_option linter.deprecated false in`.
+#
+# [uintbasic] Hashable Int8/Int16/Int32 — remove wrong instances
+#   The source (UInt64-based) Hashable instances for Int8/16/32 reference .toUInt64
+#   → .toUSize64 after renaming (wrong return type: USize64 ≠ UInt64).
+#   Remove all three; they are already defined upstream via .toUInt64.
+#
+# [uintbasic] Hashable ISize64 — fix hash return type
+#   The generated `hash i := i.toUSize64` returns USize64, not UInt64.
+#   Replace with `hash i := hash i.toInt`.
+#
+# [uintbasic] Hashable ISize — remove wrong instance
+#   The generated instance uses `i.toUSize.toUSize64` (wrong return type USize64).
+#   Remove it; ISize's Hashable is already defined upstream.
+#
+# ─── Generated_USize32.lean (USize32 / ISize32) ─────────────────────────────
+#
+# [uintbasic] instance USize32.instOfNat / ISize32.instOfNat — explicit (n : Nat)
+#   Same issue: add `(n : Nat)` to both instOfNat instances.
+#
+# [uintbasic] HMod USize32 Nat USize32 — suppress deprecation warning
+#   Same: wrap with `set_option linter.deprecated false in`.
+#
+# [uintbasic] Hashable instances — no changes needed
+#   The USize32 source (UInt32-based) Hashable instances for Int8/16/32 do NOT
+#   appear because should_keep filters for "UInt32"/"Int32" and those instances
+#   contain "UInt64".  The generated Hashable ISize32 using .toUSize32.toUInt64
+#   is correct (returns UInt64 as required by the Hashable typeclass).
 
 from dataclasses import dataclass
 from pathlib import Path
