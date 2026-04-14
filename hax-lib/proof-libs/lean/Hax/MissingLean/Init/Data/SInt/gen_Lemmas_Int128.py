@@ -15,151 +15,6 @@ Usage:
 If no output path is given the result is printed to stdout.
 """
 
-# ---------------------------------------------------------------------------
-# Known shortcomings and residual issues requiring manual post-processing
-# ---------------------------------------------------------------------------
-#
-# --mode basic (Init/Data/SInt/Basic.lean → Basic_Int128.lean)
-# ─────────────────────────────────────────────────────────────
-# 1. Wrong maxValue / minValue literals.
-#    Source contains Int64's evaluated bounds (9223372036854775807 and
-#    -9223372036854775808); these numeric literals are not matched by any
-#    substitution rule.
-#    Fix: replace with the correct Int128 bounds
-#         (170141183460469231731687303715884105727 and
-#          -170141183460469231731687303715884105728).
-#
-# 2. Hashable Int128: wrong hash return type.
-#    Source: hash i := i.toUInt64   →   generated: hash i := i.toUInt128
-#    Hashable.hash must return UInt64, not UInt128.
-#    Fix: hash i := UInt64.ofInt i.toInt
-#
-# 3. Spurious Hashable Int8/Int16/Int32/ISize instances.
-#    These instances in the source implement Hashable by calling .toUInt64,
-#    so they contain "UInt64" and pass should_keep.  After renaming they
-#    reference .toUInt128 (wrong return type) and are not about Int128 at all.
-#    Fix: delete all four instances.
-#
-# 4. Missing Int128.toInt64 and Int64.toInt128 conversions.
-#    No integer type larger than Int64 appears in Basic.lean, so there is
-#    nothing to rename into these functions.
-#    Fix: add both definitions manually.
-#
-# 5. Structure field doc comment not updated.
-#    The toUInt128 field inside "structure Int128 where" has an indented
-#    doc comment that still refers to "64-bit".  The comment text is
-#    harmless but misleading.
-#
-# --mode lemmas (Init/Data/SInt/Lemmas.lean → Lemmas_Int128.lean)
-# ────────────────────────────────────────────────────────────────
-# 1. ISize.toInt_le_int128MaxValue: proof broken after rename.
-#    The original proof uses le_of_lt_add_one x.toInt_lt, which establishes
-#    x.toInt ≤ 2^(Platform.numBits/2) - 1.  After rename the goal becomes
-#    x.toInt ≤ 2^127 - 1, which that lemma cannot prove (ISize ≠ Int128).
-#    Fix: manual proof using Int.le_trans and Platform.numBits_eq.
-#
-# 2. UInt128.toInt128_ofNatLT: references BitVec.ofNatLT_eq_ofNat which does
-#    not exist at Lean v4.29.0-rc1.
-#    Fix: find or prove an equivalent simp lemma for this version.
-#
-# --mode toexpr  (Lean/ToExpr.lean → Lean/ToExpr.lean)
-# ──────────────────────────────────────────────────────
-# The generated file uses "open Lean" globally (in the header) instead of
-# the per-instance "open Lean in" style used in the existing file.
-# This is functionally equivalent.
-#
-# --mode sint  (Lean/Meta/Tactic/Simp/BuiltinSimprocs/SInt.lean → BuiltinSimpProcs/SInt.lean)
-# ─────────────────────────────────────────────────────────────────────────────────────────────
-# No known shortcomings.  The macro approach produces a clean, maintainable
-# file; updating to a new Lean version is a matter of re-running the script.
-#
-# --mode toint  (Init/GrindInstances/ToInt.lean → Init/GrindInstances/ToInt.lean)
-# ────────────────────────────────────────────────────────────────────────────────
-# 1. Comments about ToInt.Pow are dropped from the output.  Two comment blocks:
-#      -- The `ToInt.Pow` instance is defined in `Init.GrindInstances.Ring.UInt`, ...
-#      -- The `ToInt.Pow` instance is defined in `Init.GrindInstances.Ring.SInt`, ...
-#    Neither references Int64 or UInt64, so they are filtered by should_keep.
-#    Fix: manually re-add both comment lines.
-#
-# --mode ringsint  (Init/GrindInstances/Ring/SInt.lean → Init/GrindInstances/Ring/SInt.lean)
-# ──────────────────────────────────────────────────────────────────────────────────────────
-# 1. Verification comment dropped.
-#    The inline comment "-- Verify we can derive the instances showing how
-#    `toInt` interacts with operations:" does not contain "Int64" or "UInt64",
-#    so it is filtered by should_keep.
-#    Fix: manually re-add the comment line before the three `example` lines.
-#
-# --mode prelude  (Init/Prelude.lean → Init/Prelude.lean)
-# ─────────────────────────────────────────────────────────
-# 1. Structure field doc comments are preserved from upstream. The existing
-#    hax file omits them. The generated file is more informative; update the
-#    hax file to keep the docs, or delete them manually if preferred.
-#
-# --mode basicaux  (Init/Data/UInt/BasicAux.lean → Init/Data/UInt/BasicAux.lean)
-# ────────────────────────────────────────────────────────────────────────────────
-# 1. Four conversions have no upstream counterpart (no UInt64.toUInt64,
-#    USize.toUInt64, UInt64.toUSize, or USize.toUSize in the UInt64 block) and
-#    must be added manually after generation:
-#      def UInt128.toUInt64 (a : UInt128) : UInt64 := a.toNat.toUInt64
-#      def UInt128.toUSize  (a : UInt128) : USize  := a.toNat.toUSize
-#      def UInt64.toUInt128 (a : UInt64)  : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
-#      def USize.toUInt128  (a : USize)   : UInt128 := ⟨BitVec.ofNat 128 a.toNat⟩
-#
-# --mode uintbasic  (Init/Data/UInt/Basic.lean → Init/Data/UInt/Basic.lean)
-# ─────────────────────────────────────────────────────────────────────────
-# 1. The `additional_uint_decls` macro (overflow helpers toNat_add_of_lt etc.)
-#    and its invocations have no upstream counterpart; must be added manually.
-# 2. The `declare_missing_uint_conversions` macro and its invocation have no
-#    upstream counterpart; must be added manually.
-# 3. The generated output has `@[instance_reducible]\ndef UInt128.decLt/decLe`
-#    (instance_reducible preserved from the stripped extern decorator) plus a
-#    separate `attribute [instance] UInt128.decLt UInt128.decLe`.  The existing
-#    hax file instead uses a combined
-#    `attribute [instance_reducible, instance] UInt128.decLt UInt128.decLe`.
-#    Both are functionally equivalent.
-# 4. `UInt128.ofInt` uses bare `ofNat` (from upstream `UInt64.ofInt`):
-#      def UInt128.ofInt (x : Int) : UInt128 := ofNat (x % 2 ^ 128).toNat
-#    The hax file qualifies it as `UInt128.ofNat`.  Fix: replace manually or
-#    add a UINTBASIC_SUBS entry `(": UInt128 := ofNat ", ": UInt128 := UInt128.ofNat ")`.
-# 5. The `@[deprecated]` modn definition and the `HMod UInt128 Nat UInt128`
-#    instance are generated without their upstream `set_option linter.*` wrappers
-#    (those lines contain no "UInt64" and are dropped by should_keep).
-#    The generated file may trigger linter warnings at use sites.
-#
-# --mode ringuint  (Init/GrindInstances/Ring/UInt.lean → Init/GrindInstances/Ring/UInt.lean)
-# ─────────────────────────────────────────────────────────────────────────────────────────────
-# 1. The `-- A better proof would be welcome!` comment inside `intCast_ofNat` is
-#    preserved in the generated output (verbatim from upstream). The existing hax
-#    file also keeps this comment, so no manual fix is needed.
-#
-# --mode uintlemmas  (Init/Data/UInt/Lemmas.lean → Init/Data/UInt/Lemmas_UInt128.lean)
-# ─────────────────────────────────────────────────────────────────────────────────────
-# 1. `UInt128.toNat_toUInt64` has no upstream counterpart (the macro only
-#    generates `toNat_toUInt64` for types with fewer than 64 bits, where the
-#    result is lossless).  Must be added manually:
-#      @[simp] theorem UInt128.toNat_toUInt64 (x : UInt128) :
-#          x.toUInt64.toNat = x.toNat % 2 ^ 64 := (rfl)
-# 2. Widening theorems (`X.toUInt128`-based items, e.g. `USize.toNat_toUInt128`,
-#    `UInt8.toFin_toUInt128`, `UInt8.toBitVec_toUInt128`, `UInt64.ofFin_uXToFin`,
-#    `UInt128.ofBitVec_uXToBitVec` widening, etc.) are generated as active
-#    theorems, but the hax file comments them out.  The `(rfl)` proofs for
-#    the widening direction may also be wrong because `X.toUInt128` uses
-#    `BitVec.ofNat 128 x.toNat` whose `toNat` only reduces modulo 2^128
-#    propositionally, not definitionally.
-# 3. Hax-specific theorems not in the upstream UInt64 block (e.g.
-#    `UInt128.toNat_ofNatTruncate_of_lt/le`, `UInt128.toFin_ofNatTruncate_of_lt/le`,
-#    `UInt128.toBitVec_ofNatTruncate_of_lt/le`, `USize.size_dvd_uInt128Size`,
-#    and many cross-type `toUX_ofNatTruncate_of_le` lemmas) are not generated
-#    and must be added manually.
-#
-# --mode uintsimproc  (Lean/Meta/Tactic/Simp/BuiltinSimprocs/UInt.lean → BuiltinSimpProcs/UInt.lean)
-# ────────────────────────────────────────────────────────────────────────────────────────────────────
-# 1. The generated file uses the macro approach (declare_uint_simprocs_ext UInt128)
-#    whereas the existing hax file has the declarations written out directly inside
-#    `namespace UInt128`.  Both are functionally equivalent.
-# 2. The USize special block (lines 92–110 of the upstream, with platform-dependent
-#    `numBits` math) is not generated; it handles platform-dependent bit widths
-#    irrelevant to UInt128.
 
 # ---------------------------------------------------------------------------
 # Manual edits required in the combined Generated.lean file (Lean v4.29.0-rc1)
@@ -262,12 +117,10 @@ If no output path is given the result is printed to stdout.
 #   - USize.ofNat_uInt128Size_sub_one: needs `cases USize.size_eq`; not in reference
 #   These three are not present in the reference Lemmas_UInt128.lean and stay omitted.
 #
-# [uintsimproc / sint] declare_uint/sint_simprocs_ext macro — DOES NOT WORK
-#   Correction to the note above: dsimproc/simproc declarations inside a macro
-#   quotation `\`(...)` produce "Unknown attribute" errors in Lean v4.29.0-rc1.
-#   The macro approach is NOT functionally equivalent; it silently silences
-#   registration.  Replace the macro call with a direct inline namespace block
-#   (matching the approach in Hax/MissingLean/Lean/Tactic/Simp/BuiltinSimpProcs/).
+# [uintsimproc / sint] declare_uint/sint_simprocs_ext macro call — auto-generated
+#   dsimproc/simproc declarations inside a macro quotation `(...)` produce
+#   "Unknown attribute" errors in Lean v4.29.0-rc1.  The script therefore expands
+#   the macro body inline (see expand_simproc_macro_body) instead of calling it.
 
 from pathlib import Path
 import re
@@ -354,23 +207,21 @@ UINTBASIC_SUBS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Sint mode: substitutions applied to the extracted macro body.
+# Sint / UIntSimproc modes: substitutions applied to the extracted macro body.
 # The upstream macro uses builtin_dsimproc/builtin_simproc (for types built
 # into the Lean kernel); Int128 is not built-in, so we use dsimproc/simproc.
 # We also rename the macro to avoid clashing with the upstream definition.
+# SIMPROC_COMMON_SUBS holds the two replacements shared by both modes; each
+# mode-specific list appends only its macro-rename entry.
 # ---------------------------------------------------------------------------
 
-SINT_SUBS = [
-    ("builtin_dsimproc",        "dsimproc"),
-    ("builtin_simproc",         "simproc"),
-    ('"declare_sint_simprocs"', '"declare_sint_simprocs_ext"'),
+SIMPROC_COMMON_SUBS = [
+    ("builtin_dsimproc", "dsimproc"),
+    ("builtin_simproc",  "simproc"),
 ]
 
-UINTSIMPROC_SUBS = [
-    ("builtin_dsimproc",        "dsimproc"),
-    ("builtin_simproc",         "simproc"),
-    ('"declare_uint_simprocs"', '"declare_uint_simprocs_ext"'),
-]
+SINT_SUBS        = SIMPROC_COMMON_SUBS + [('"declare_sint_simprocs"', '"declare_sint_simprocs_ext"')]
+UINTSIMPROC_SUBS = SIMPROC_COMMON_SUBS + [('"declare_uint_simprocs"', '"declare_uint_simprocs_ext"')]
 
 
 def extract_simproc_macro(lines: list[str], macro_name: str) -> list[str]:
@@ -390,6 +241,103 @@ def extract_simproc_macro(lines: list[str], macro_name: str) -> list[str]:
                 break  # first invocation — stop here
             result.append(line)
     return result
+
+
+def _uint_simproc_expand_subs(typename: str) -> list[tuple[str, str]]:
+    """
+    Substitution list to expand Lean metaprogramming syntax in the UInt simproc
+    macro body (`( ... )`) to concrete Lean code for `typename`.
+    Applied in order; more-specific patterns precede their shorter prefixes.
+    """
+    return [
+        # Quoted Name literals
+        ("$(quote typeName.getId)",          f"``{typename}"),
+        ("$(quote ofNatLT.getId)",           f"``{typename}.ofNatLT"),
+        ("$(quote toNat.getId)",             f"``{typename}.toNat"),
+        ("$(quote ofNat)",                   f"``{typename}.ofNat"),
+        # Named dsimproc/simproc identifiers wrapped in $(mkIdent ...):ident
+        ("$(mkIdent `reduceAdd):ident",      "reduceAdd"),
+        ("$(mkIdent `reduceMul):ident",      "reduceMul"),
+        ("$(mkIdent `reduceSub):ident",      "reduceSub"),
+        ("$(mkIdent `reduceDiv):ident",      "reduceDiv"),
+        ("$(mkIdent `reduceMod):ident",      "reduceMod"),
+        ("$(mkIdent `reduceLT):ident",       "reduceLT"),
+        ("$(mkIdent `reduceLE):ident",       "reduceLE"),
+        ("$(mkIdent `reduceGT):ident",       "reduceGT"),
+        ("$(mkIdent `reduceGE):ident",       "reduceGE"),
+        ("$(mkIdent `reduceOfNatLT):ident",  "reduceOfNatLT"),
+        ("$(mkIdent `reduceOfNat):ident",    "reduceOfNat"),
+        ("$(mkIdent `reduceToNat):ident",    "reduceToNat"),
+        # Ident expressions
+        ("$(mkIdent ofNatLT)",               "ofNatLT"),
+        ("$(mkIdent ofNat)",                 "ofNat"),
+        # Bare dollar-idents (used in simproc patterns / bodies)
+        ("$ofNatLT",   "ofNatLT"),
+        ("$toNat",     "toNat"),
+        ("$fromExpr",  "fromExpr"),
+        ("$typeName",  typename),
+    ]
+
+
+def _sint_simproc_expand_subs(typename: str) -> list[tuple[str, str]]:
+    """
+    Substitution list to expand Lean metaprogramming syntax in the SInt simproc
+    macro body (`( ... )`) to concrete Lean code for `typename`.
+    """
+    return [
+        # Quoted Name literals
+        ("$(quote typeName.getId)",              f"``{typename}"),
+        ("$(quote ofIntLE.getId)",               f"``{typename}.ofIntLE"),
+        ("$(quote toInt.getId)",                 f"``{typename}.toInt"),
+        ("$(quote toNatClampNeg.getId)",         f"``{typename}.toNatClampNeg"),
+        ("$(quote ofNat)",                       f"``{typename}.ofNat"),
+        ("$(quote ofInt)",                       f"``{typename}.ofInt"),
+        # Named dsimproc/simproc identifiers wrapped in $(mkIdent ...):ident
+        ("$(mkIdent `reduceAdd):ident",          "reduceAdd"),
+        ("$(mkIdent `reduceMul):ident",          "reduceMul"),
+        ("$(mkIdent `reduceSub):ident",          "reduceSub"),
+        ("$(mkIdent `reduceDiv):ident",          "reduceDiv"),
+        ("$(mkIdent `reduceMod):ident",          "reduceMod"),
+        ("$(mkIdent `reduceLT):ident",           "reduceLT"),
+        ("$(mkIdent `reduceLE):ident",           "reduceLE"),
+        ("$(mkIdent `reduceGT):ident",           "reduceGT"),
+        ("$(mkIdent `reduceGE):ident",           "reduceGE"),
+        ("$(mkIdent `reduceOfIntLE):ident",      "reduceOfIntLE"),
+        ("$(mkIdent `reduceOfNat):ident",        "reduceOfNat"),
+        ("$(mkIdent `reduceOfInt):ident",        "reduceOfInt"),
+        ("$(mkIdent `reduceToInt):ident",        "reduceToInt"),
+        ("$(mkIdent `reduceToNatClampNeg):ident","reduceToNatClampNeg"),
+        # Ident expressions
+        ("$(mkIdent ofNat)",   "ofNat"),
+        ("$(mkIdent ofInt)",   "ofInt"),
+        # Bare dollar-idents
+        ("$ofIntLE",        "ofIntLE"),
+        ("$toInt",          "toInt"),
+        ("$toNatClampNeg",  "toNatClampNeg"),
+        ("$fromExpr",       "fromExpr"),
+        ("$typeName",       typename),
+    ]
+
+
+def expand_simproc_macro_body(macro_text: str, typename: str, mode: str) -> str:
+    """
+    Extract the `( ... )` quotation body from the already-substituted macro
+    definition text and expand Lean metaprogramming syntax to produce a
+    concrete inline `namespace {typename} ... end {typename}` block.
+
+    This replaces the broken `declare_{uint,sint}_simprocs_ext {typename}` call:
+    dsimproc/simproc inside a macro quotation produce "Unknown attribute" errors.
+    """
+    marker = "`(\n"
+    start = macro_text.index(marker) + len(marker)
+    end = macro_text.rindex("\n)")
+    body = macro_text[start:end]
+
+    subs = (_uint_simproc_expand_subs(typename) if mode == "uintsimproc"
+            else _sint_simproc_expand_subs(typename))
+    for old, new in subs:
+        body = body.replace(old, new)
+    return body
 
 # ---------------------------------------------------------------------------
 # Substitution rules
@@ -465,41 +413,6 @@ def is_lean_declaration(item: str) -> bool:
     first_line = item.split("\n")[0]
     return any(first_line.startswith(p) for p in LEAN_DECL_PREFIXES)
 
-
-# Patterns in the ORIGINAL (pre-substitution) source text that indicate an
-# item involves an ISize↔Int64 *conversion* (not just a bound comparison).
-# Int128.toISize and ISize.toInt128 don't exist, so these items can't be
-# ported and must be dropped.
-#
-# Three disjoint cases cover all such items in practice:
-#   1. "toISize"   – any call that produces an ISize from something else
-#                    (Int64.toBitVec_toISize, ISize.ofBitVec_int64ToBitVec…)
-#   2. "iSizeTo"   – any name whose ISize is the *source* being converted
-#                    (Int64.ofBitVec_iSizeToBitVec, ofIntLE_iSizeToInt…)
-#   3. ISize namespace + ".toInt64" call – conversions from ISize to Int64
-#                    (ISize.toBitVec_toInt64, ISize.toInt_toInt64…)
-#
-# Items such as ISize.int64MinValue_le_toInt / ISize.toInt_le_int64MaxValue
-# contain "ISize" but neither "toISize", "iSizeTo", nor ".toInt64", so they
-# are kept and renamed correctly.
-def is_isize_conversion(item: str) -> bool:
-    if "toISize" in item:
-        return True
-    if "iSizeTo" in item:
-        return True
-    if "ISize" in item and ".toInt64" in item:
-        return True
-    return False
-
-
-def uses_unavailable_typeclass(item: str) -> bool:
-    """
-    Drop items that reference type class identifiers that don't exist for
-    Int128 (either absent from this Lean version or not provided for Int128).
-    The 'maximum recursion depth' elaboration errors these cause cascade into
-    unrelated theorems that follow.
-    """
-    return "IsLinearOrder" in item or "LawfulOrderLT" in item
 
 
 def is_extern_attribute_decl(item: str) -> bool:
@@ -666,7 +579,10 @@ def generate(mode: str, raw_lines: list[str]) -> str:
         macro_text = "\n".join(macro_lines)
         for old, new in SINT_SUBS:
             macro_text = macro_text.replace(old, new)
-        body = macro_text.rstrip() + "\n\ndeclare_sint_simprocs_ext Int128"
+        inline = expand_simproc_macro_body(macro_text, "Int128", mode)
+        comment = ("-- declare_sint_simprocs_ext Int128"
+                   " -- macro call replaced with direct inline")
+        body = macro_text.rstrip() + "\n\n" + comment + "\n" + inline
         return _with_preamble(SINT_PREAMBLE, body)
 
     elif mode == "uintsimproc":
@@ -674,7 +590,11 @@ def generate(mode: str, raw_lines: list[str]) -> str:
         macro_text = "\n".join(macro_lines)
         for old, new in UINTSIMPROC_SUBS:
             macro_text = macro_text.replace(old, new)
-        body = macro_text.rstrip() + "\n\ndeclare_uint_simprocs_ext UInt128"
+        inline = expand_simproc_macro_body(macro_text, "UInt128", mode)
+        comment = ("-- declare_uint_simprocs_ext UInt128"
+                   " -- macro call replaced with direct inline"
+                   " (macros don't handle dsimproc correctly)")
+        body = macro_text.rstrip() + "\n\n" + comment + "\n" + inline
         return _with_preamble(UINTSIMPROC_PREAMBLE, body)
 
     elif mode == "prelude":
@@ -761,8 +681,11 @@ def generate(mode: str, raw_lines: list[str]) -> str:
         for item in split_into_items(raw_lines):
             if (should_keep(item)
                     and is_lean_declaration(item)
-                    and not is_isize_conversion(item)
-                    and not uses_unavailable_typeclass(item)):
+                    and not is_extern_attribute_decl(item)):
+                if mode == "basic":
+                    # Int128 is not a built-in kernel type; strip @[extern "..."]
+                    # decorators (only ISize conversion defs carry them here).
+                    item = strip_extern_decorator(item)
                 kept.append(apply_substitutions(item))
 
         return _with_preamble(preamble, "\n\n".join(kept))
