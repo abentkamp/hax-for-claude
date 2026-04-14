@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Generate Int128/UInt128 Lean declarations from Lean4 upstream source files.
+Generate Int128/UInt128, USize64/ISize64, and USize32/ISize32 Lean declarations
+from Lean4 upstream source files.
 
 Automatically locates the Lean4 source tree via the nearest lean-toolchain file
 (searched upward from this script), reads each upstream source file, applies all
-transformation pipelines, and writes the combined output to a single Lean file.
+transformation pipelines for each target type, and writes three combined output files:
 
-The output contains no import statements; each section is prefixed with a comment
-header identifying the upstream source and the target hax file.
+  Generated.lean         — Int128 / UInt128  (derived from Int64 / UInt64)
+  Generated_USize64.lean — ISize64 / USize64 (derived from Int64 / UInt64, same width)
+  Generated_USize32.lean — ISize32 / USize32 (derived from Int32 / UInt32)
 
 Usage:
-    python3 gen_Lemmas_Int128.py [output.lean]
-
-If no output path is given the result is printed to stdout.
+    python3 gen_Lemmas_Int128.py
 """
 
 
@@ -122,20 +122,57 @@ If no output path is given the result is printed to stdout.
 #   "Unknown attribute" errors in Lean v4.29.0-rc1.  The script therefore expands
 #   the macro body inline (see expand_simproc_macro_body) instead of calling it.
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import sys
+
+
+# ---------------------------------------------------------------------------
+# Per-target configuration
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TargetConfig:
+    source_uint: str      # upstream unsigned type, e.g. "UInt64" or "UInt32"
+    source_int:  str      # upstream signed type,   e.g. "Int64"  or "Int32"
+    target_uint: str      # generated unsigned type, e.g. "UInt128", "USize64"
+    target_int:  str      # generated signed type,   e.g. "Int128", "ISize64"
+    bits:        int      # target bit-width: 128, 64, or 32
+    change_bits: bool     # True only for Int128/UInt128 (64→128)
+    grind_next_uint: str  # type following source_uint in Ring/UInt.lean grind section
+    grind_next_int:  str  # type following source_int  in Ring/SInt.lean grind section
+    output_file: str      # output filename relative to script directory
+
+
+INT128_TARGET = TargetConfig(
+    source_uint="UInt64", source_int="Int64",
+    target_uint="UInt128", target_int="Int128",
+    bits=128, change_bits=True,
+    grind_next_uint="USize", grind_next_int="ISize",
+    output_file="../../../Generated.lean",
+)
+USIZE64_TARGET = TargetConfig(
+    source_uint="UInt64", source_int="Int64",
+    target_uint="USize64", target_int="ISize64",
+    bits=64, change_bits=False,
+    grind_next_uint="USize", grind_next_int="ISize",
+    output_file="../../../Generated_USize64.lean",
+)
+USIZE32_TARGET = TargetConfig(
+    source_uint="UInt32", source_int="Int32",
+    target_uint="USize32", target_int="ISize32",
+    bits=32, change_bits=False,
+    grind_next_uint="UInt64", grind_next_int="Int64",
+    output_file="../../../Generated_USize32.lean",
+)
+ALL_TARGETS = [INT128_TARGET, USIZE64_TARGET, USIZE32_TARGET]
 
 # ---------------------------------------------------------------------------
 # Import-free preambles for each section of the combined output.
 # (Imports are already excluded by the should_keep / is_lean_declaration
 # pipeline filters and need not appear in a reference file.)
 # ---------------------------------------------------------------------------
-
-LEMMAS_PREAMBLE = """\
-set_option maxRecDepth 4000
-
-declare_int_theorems Int128 128"""
 
 BASIC_PREAMBLE = "set_option autoImplicit true"
 
@@ -160,11 +197,14 @@ BASICAUX_PREAMBLE = ""
 
 UINTBASIC_PREAMBLE = ""
 
-UINTLEMMAS_PREAMBLE = """\
-set_option autoImplicit true
-open Std
+def make_lemmas_preamble(cfg: TargetConfig) -> str:
+    return (f"set_option maxRecDepth 4000\n\n"
+            f"declare_int_theorems {cfg.target_int} {cfg.bits}")
 
-declare_uint_theorems UInt128 128"""
+
+def make_uintlemmas_preamble(cfg: TargetConfig) -> str:
+    return (f"set_option autoImplicit true\nopen Std\n\n"
+            f"declare_uint_theorems {cfg.target_uint} {cfg.bits}")
 
 # ---------------------------------------------------------------------------
 # Ordered (mode, upstream_rel_path, hax_rel_path) for every section.
@@ -345,45 +385,49 @@ def expand_simproc_macro_body(macro_text: str, typename: str, mode: str) -> str:
 # PascalCase and snake_case forms must be renamed.
 # ---------------------------------------------------------------------------
 
-LITERAL_SUBS = [
-    ("UInt64", "UInt128"),
-    ("Int64",  "Int128"),
-    # Lowercase snake_case occurrences in theorem names:
-    #   e.g. ofBitVec_int64ToBitVec, int64MinValue_le_toInt, ofInt_int64ToInt
-    # Must come after the PascalCase replacements (no overlap, but clearer).
-    ("int64",  "int128"),
-    # BitVec 64 is the underlying representation of Int64; Int128 wraps BitVec 128.
-    # Must come before the standalone "64" patterns below.
-    ("BitVec 64", "BitVec 128"),
-    # Bit-width literals that appear explicitly in Int64 theorems:
-    ("signExtend 64",  "signExtend 128"),
-    ("smod 64",        "smod 128"),       # shiftLeft/shiftRight clamp the shift amount
-    ("BitVec.ofInt 64", "BitVec.ofInt 128"),
-    ("#64", "#128"),
-    ("ofNat 64", "ofNat 128"),  # rare but possible
-    # IntInterval shape arguments in ToInt instances:
-    (".uint 64",  ".uint 128"),
-    (".sint 64",  ".sint 128"),
-    # UInt64.size / Int64.size appear as the evaluated literal 2^64 in the source.
-    # We use the bare 2^128 literal so the substitution is valid even in contexts
-    # where Int128.size is not yet defined (e.g. Init/Prelude.lean).
-    ("18446744073709551616", "340282366920938463463374607431768211456"),
-]
-
-# Signed-range bounds: 2^63  →  2^127
-# Arithmetic modulus:  2^64  →  2^128  (bmod for add/sub/neg/etc.)
-REGEX_SUBS = [
-    (re.compile(r"2 \^ 63\b"), "2 ^ 127"),
-    (re.compile(r"2\^63\b"),   "2^127"),
-    (re.compile(r"2 \^ 64\b"), "2 ^ 128"),
-    (re.compile(r"2\^64\b"),   "2^128"),
-]
+def make_literal_subs(cfg: TargetConfig) -> list[tuple[str, str]]:
+    """Build the literal-string substitution list for *cfg*."""
+    subs = [
+        (cfg.source_uint, cfg.target_uint),
+        (cfg.source_int,  cfg.target_int),
+        # Lowercase snake_case occurrences in theorem names:
+        #   e.g. ofBitVec_int64ToBitVec, int64MinValue_le_toInt
+        (cfg.source_int.lower(), cfg.target_int.lower()),
+    ]
+    if cfg.change_bits:
+        half = cfg.bits // 2
+        subs += [
+            (f"BitVec {half}", f"BitVec {cfg.bits}"),
+            (f"signExtend {half}",  f"signExtend {cfg.bits}"),
+            (f"smod {half}",        f"smod {cfg.bits}"),
+            (f"BitVec.ofInt {half}", f"BitVec.ofInt {cfg.bits}"),
+            (f"#{half}", f"#{cfg.bits}"),
+            (f"ofNat {half}", f"ofNat {cfg.bits}"),
+            (f".uint {half}",  f".uint {cfg.bits}"),
+            (f".sint {half}",  f".sint {cfg.bits}"),
+            # 2^64 as a Nat literal → 2^128
+            ("18446744073709551616", "340282366920938463463374607431768211456"),
+        ]
+    return subs
 
 
-def apply_substitutions(text: str) -> str:
-    for old, new in LITERAL_SUBS:
+def make_regex_subs(cfg: TargetConfig) -> list[tuple[re.Pattern, str]]:
+    """Build the regex substitution list for *cfg*."""
+    if not cfg.change_bits:
+        return []
+    half = cfg.bits // 2
+    return [
+        (re.compile(rf"2 \^ {half - 1}\b"), f"2 ^ {cfg.bits - 1}"),
+        (re.compile(rf"2\^{half - 1}\b"),   f"2^{cfg.bits - 1}"),
+        (re.compile(rf"2 \^ {half}\b"),     f"2 ^ {cfg.bits}"),
+        (re.compile(rf"2\^{half}\b"),       f"2^{cfg.bits}"),
+    ]
+
+
+def apply_substitutions(text: str, cfg: TargetConfig) -> str:
+    for old, new in make_literal_subs(cfg):
         text = text.replace(old, new)
-    for pattern, new in REGEX_SUBS:
+    for pattern, new in make_regex_subs(cfg):
         text = pattern.sub(new, text)
     return text
 
@@ -392,9 +436,9 @@ def apply_substitutions(text: str) -> str:
 # Filtering
 # ---------------------------------------------------------------------------
 
-def should_keep(item: str) -> bool:
-    """Keep an item if it is specific to Int64 or UInt64."""
-    return "Int64" in item or "UInt64" in item
+def should_keep(item: str, cfg: TargetConfig) -> bool:
+    """Keep an item if it references the source unsigned or signed type."""
+    return cfg.source_uint in item or cfg.source_int in item
 
 
 # Keywords that begin a Lean declaration.  Items whose first line does not
@@ -445,19 +489,20 @@ def strip_extern_decorator(item: str) -> str:
     return "\n".join(lines[1:])
 
 
-def is_uint64_primary_definition(item: str) -> bool:
+def is_primary_definition(item: str, cfg: TargetConfig) -> bool:
     """
-    For prelude mode: return True only for items that define UInt64 itself or
-    provide a typeclass instance specifically for UInt64.  Rejects items that
-    merely use UInt64 as a return/argument type (e.g. class Hashable, mixHash,
-    String.hash).  Must be called after strip_extern_decorator so the first
-    line is the actual declaration, not the @[extern "..."] decorator.
+    For prelude mode: return True only for items that define the source unsigned
+    type itself or provide a typeclass instance specifically for it.  Rejects
+    items that merely use the type as a return/argument type (e.g. class
+    Hashable, mixHash, String.hash).  Must be called after strip_extern_decorator
+    so the first line is the actual declaration, not the @[extern "..."] decorator.
     """
     first = item.split("\n")[0]
-    return (first.startswith("abbrev UInt64") or
-            first.startswith("structure UInt64") or
-            first.startswith("def UInt64.") or
-            (first.startswith("instance : ") and "UInt64" in first))
+    su = cfg.source_uint
+    return (first.startswith(f"abbrev {su}") or
+            first.startswith(f"structure {su}") or
+            first.startswith(f"def {su}.") or
+            (first.startswith("instance : ") and su in first))
 
 
 def extract_namespace_block(lines: list[str], typename: str) -> list[str]:
@@ -566,8 +611,8 @@ def find_lean_src() -> Path:
         p = p.parent
 
 
-def generate(mode: str, raw_lines: list[str]) -> str:
-    """Run the transformation pipeline for *mode* and return the content string."""
+def generate(mode: str, raw_lines: list[str], cfg: TargetConfig) -> str:
+    """Run the transformation pipeline for *mode* / *cfg* and return the content."""
 
     def _with_preamble(preamble: str, body: str) -> str:
         if preamble:
@@ -579,8 +624,8 @@ def generate(mode: str, raw_lines: list[str]) -> str:
         macro_text = "\n".join(macro_lines)
         for old, new in SINT_SUBS:
             macro_text = macro_text.replace(old, new)
-        inline = expand_simproc_macro_body(macro_text, "Int128", mode)
-        comment = ("-- declare_sint_simprocs_ext Int128"
+        inline = expand_simproc_macro_body(macro_text, cfg.target_int, mode)
+        comment = (f"-- declare_sint_simprocs_ext {cfg.target_int}"
                    " -- macro call replaced with direct inline")
         body = macro_text.rstrip() + "\n\n" + comment + "\n" + inline
         return _with_preamble(SINT_PREAMBLE, body)
@@ -590,8 +635,8 @@ def generate(mode: str, raw_lines: list[str]) -> str:
         macro_text = "\n".join(macro_lines)
         for old, new in UINTSIMPROC_SUBS:
             macro_text = macro_text.replace(old, new)
-        inline = expand_simproc_macro_body(macro_text, "UInt128", mode)
-        comment = ("-- declare_uint_simprocs_ext UInt128"
+        inline = expand_simproc_macro_body(macro_text, cfg.target_uint, mode)
+        comment = (f"-- declare_uint_simprocs_ext {cfg.target_uint}"
                    " -- macro call replaced with direct inline"
                    " (macros don't handle dsimproc correctly)")
         body = macro_text.rstrip() + "\n\n" + comment + "\n" + inline
@@ -600,93 +645,87 @@ def generate(mode: str, raw_lines: list[str]) -> str:
     elif mode == "prelude":
         # Prelude mode: drop extern-only attribute declarations and strip
         # @[extern "..."] decorator lines from definitions.  Then keep only
-        # items that define UInt64 itself (not items that merely use UInt64 as
-        # a return/argument type such as class Hashable or opaque mixHash).
-        # The standard isize-conversion and unavailable-typeclass filters are
-        # not needed (no ISize or IsLinearOrder in Init/Prelude.lean).
+        # items that define the source unsigned type itself (not items that
+        # merely use it as a return/argument type such as class Hashable).
         kept: list[str] = []
         for item in split_into_items(raw_lines):
-            if (should_keep(item)
+            if (should_keep(item, cfg)
                     and is_lean_declaration(item)
                     and not is_extern_attribute_decl(item)):
                 item = strip_extern_decorator(item)
-                if is_uint64_primary_definition(item):
-                    kept.append(apply_substitutions(item))
+                if is_primary_definition(item, cfg):
+                    kept.append(apply_substitutions(item, cfg))
         return _with_preamble(PRELUDE_PREAMBLE, "\n\n".join(kept))
 
     elif mode == "basicaux":
-        # BasicAux mode: strip @[extern "..."] decorator lines (all UInt64
-        # definitions in this file have extern implementations) and apply
-        # BASICAUX_SUBS to fix the body of widening conversions.  No
-        # is_uint64_primary_definition filter needed — every UInt64 item in
-        # this file is a genuine UInt64 definition or conversion.
+        # BasicAux mode: strip @[extern "..."] decorator lines and optionally
+        # apply BASICAUX_SUBS to fix widening conversion bodies (only needed
+        # when the target bit-width differs from the source, i.e. change_bits).
         kept: list[str] = []
         for item in split_into_items(raw_lines):
-            if (should_keep(item)
+            if (should_keep(item, cfg)
                     and is_lean_declaration(item)
                     and not is_extern_attribute_decl(item)):
                 item = strip_extern_decorator(item)
-                item = apply_substitutions(item)
-                for old, new in BASICAUX_SUBS:
-                    item = item.replace(old, new)
+                item = apply_substitutions(item, cfg)
+                if cfg.change_bits:
+                    for old, new in BASICAUX_SUBS:
+                        item = item.replace(old, new)
                 kept.append(item)
         return _with_preamble(BASICAUX_PREAMBLE, "\n\n".join(kept))
 
     elif mode == "ringuint":
-        # RingUInt mode: extract the UInt64 namespace block and the UInt64 section
-        # of the Lean.Grind namespace verbatim, then apply standard substitutions.
-        # The item-based pipeline cannot be used here because the namespace wrapper
-        # lines and the `attribute [local instance] natCast intCast` line lack
-        # "UInt64" and would be dropped by should_keep.
-        ns_lines = extract_namespace_block(raw_lines, "UInt64")
-        grind_lines = extract_grind_section(raw_lines, "UInt64", "USize")
-        ns_text = apply_substitutions("\n".join(ns_lines))
-        grind_text = apply_substitutions("\n".join(grind_lines))
+        # RingUInt mode: extract the source_uint namespace block and the
+        # source_uint section of the Lean.Grind namespace, then apply subs.
+        ns_lines = extract_namespace_block(raw_lines, cfg.source_uint)
+        grind_lines = extract_grind_section(raw_lines, cfg.source_uint,
+                                            cfg.grind_next_uint)
+        ns_text = apply_substitutions("\n".join(ns_lines), cfg)
+        grind_text = apply_substitutions("\n".join(grind_lines), cfg)
         return _with_preamble(RINGUINT_PREAMBLE, ns_text + "\n\n" + grind_text)
 
     elif mode == "uintbasic":
         # UIntBasic mode: strip @[extern "..."] decorators (preserving any
-        # co-located attributes such as instance_reducible), drop the two
-        # USize↔UInt64 cross-type conversions that are either already in
-        # BasicAux or produce wrong bodies for UInt128, then apply UINTBASIC_SUBS
-        # to fix shift moduli and qualify ofNat.
+        # co-located attributes such as instance_reducible).  When change_bits,
+        # drop USize↔source_uint conversions (wrong bodies for the wider type)
+        # and apply UINTBASIC_SUBS to fix shift moduli.
         kept: list[str] = []
         for item in split_into_items(raw_lines):
-            if (should_keep(item)
+            if (should_keep(item, cfg)
                     and is_lean_declaration(item)
                     and not is_extern_attribute_decl(item)):
                 item = strip_extern_decorator(item)
-                # Drop USize↔UInt64 conversions (wrong body / belongs in BasicAux)
-                first = item.split("\n")[0]
-                if (first.startswith("def UInt64.toUSize")
-                        or first.startswith("def USize.toUInt64")):
-                    continue
-                item = apply_substitutions(item)
-                for old, new in UINTBASIC_SUBS:
-                    item = item.replace(old, new)
+                if cfg.change_bits:
+                    first = item.split("\n")[0]
+                    if (first.startswith(f"def {cfg.source_uint}.toUSize")
+                            or first.startswith(f"def USize.to{cfg.source_uint}")):
+                        continue
+                item = apply_substitutions(item, cfg)
+                if cfg.change_bits:
+                    for old, new in UINTBASIC_SUBS:
+                        item = item.replace(old, new)
                 kept.append(item)
         return _with_preamble(UINTBASIC_PREAMBLE, "\n\n".join(kept))
 
     else:
         preamble = {
-            "lemmas":     LEMMAS_PREAMBLE,
+            "lemmas":     make_lemmas_preamble(cfg),
             "basic":      BASIC_PREAMBLE,
             "toexpr":     TOEXPR_PREAMBLE,
             "toint":      TOINT_PREAMBLE,
             "ringsint":   RINGSINT_PREAMBLE,
-            "uintlemmas": UINTLEMMAS_PREAMBLE,
+            "uintlemmas": make_uintlemmas_preamble(cfg),
         }[mode]
 
         kept: list[str] = []
         for item in split_into_items(raw_lines):
-            if (should_keep(item)
+            if (should_keep(item, cfg)
                     and is_lean_declaration(item)
                     and not is_extern_attribute_decl(item)):
                 if mode == "basic":
-                    # Int128 is not a built-in kernel type; strip @[extern "..."]
-                    # decorators (only ISize conversion defs carry them here).
+                    # Non-kernel types need @[extern "..."] stripped.
                     item = strip_extern_decorator(item)
-                kept.append(apply_substitutions(item))
+                kept.append(apply_substitutions(item, cfg))
 
         return _with_preamble(preamble, "\n\n".join(kept))
 
@@ -701,21 +740,17 @@ def make_section(upstream_rel: str, hax_rel: str, content: str) -> str:
 
 
 def main() -> None:
-    output_path = sys.argv[1] if len(sys.argv) > 1 else None
-
     lean_src = find_lean_src()
-    sections = []
-    for mode, upstream_rel, hax_rel in SECTIONS:
-        raw_lines = (lean_src / upstream_rel).read_text(encoding="utf-8").splitlines()
-        content = generate(mode, raw_lines)
-        sections.append(make_section(upstream_rel, hax_rel, content))
-
-    output = "\n\n".join(sections) + "\n"
-    if output_path:
-        Path(output_path).write_text(output, encoding="utf-8")
-        print(f"Written to {output_path}", file=sys.stderr)
-    else:
-        print(output, end="")
+    for cfg in ALL_TARGETS:
+        sections = []
+        for mode, upstream_rel, hax_rel in SECTIONS:
+            raw_lines = (lean_src / upstream_rel).read_text(encoding="utf-8").splitlines()
+            content = generate(mode, raw_lines, cfg)
+            sections.append(make_section(upstream_rel, hax_rel, content))
+        output = "\n\n".join(sections) + "\n"
+        out_path = Path(__file__).resolve().parent / cfg.output_file
+        out_path.write_text(output, encoding="utf-8")
+        print(f"Written to {out_path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
