@@ -1,0 +1,11 @@
+name = "GeneratedTypes"
+version = "0.1.0"
+defaultTargets = ["GeneratedTypes"]
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "GeneratedTypes"
+roots = ["Hax.MissingLean.Generated", "Hax.MissingLean.Generated_USize64", "Hax.MissingLean.Generated_USize32"]
