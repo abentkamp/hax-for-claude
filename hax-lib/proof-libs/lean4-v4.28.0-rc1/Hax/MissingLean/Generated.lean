@@ -1,3 +1,5 @@
+import Lean
+
 -- ──────────────────────────────────────────────────────────────────────
 -- Source: Init/Prelude.lean
 -- Target: Hax/MissingLean/Init/Prelude.lean
@@ -228,9 +230,9 @@ instance Int128.instOfNat (n : Nat) : OfNat Int128 n := ⟨Int128.ofNat n⟩
 instance Int128.instNeg : Neg Int128 where
   neg := Int128.neg
 
-abbrev Int128.maxValue : Int128 := 9223372036854775807
+abbrev Int128.maxValue : Int128 := 170141183460469231731687303715884105727
 
-abbrev Int128.minValue : Int128 := -9223372036854775808
+abbrev Int128.minValue : Int128 := -170141183460469231731687303715884105728
 
 @[inline]
 def Int128.ofIntLE (i : Int) (_hl : Int128.minValue.toInt ≤ i) (_hr : i ≤ Int128.maxValue.toInt) : Int128 :=
@@ -722,10 +724,13 @@ def UInt128.toUSize (a : UInt128) : USize := a.toNat.toUSize
 @[simp] theorem UInt32.toNat_toUInt128 (n : UInt32) : n.toUInt128.toNat = n.toNat :=
   Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
 
+theorem USize.size_le_uint128Size : USize.size ≤ UInt128.size := by
+  cases USize.size_eq <;> simp_all +decide
+
 declare_uint_theorems UInt128 128
 
 @[simp] theorem USize.toNat_toUInt128 (n : USize) : n.toUInt128.toNat = n.toNat :=
-  Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le n.toNat_lt USize.size_le_uint128Size)
+  Nat.mod_eq_of_lt (Nat.lt_trans n.toNat_lt (by decide))
 
 theorem UInt128.ofNat_mod_size : ofNat (x % 2 ^ 128) = ofNat x := by
   simp [ofNat, BitVec.ofNat, Fin.ofNat]
@@ -747,9 +752,6 @@ theorem UInt128.ofNat_le_iff {n : UInt128} {m : Nat} (h : m < size) : ofNat m �
 protected theorem UInt128.mod_eq_of_lt {a b : UInt128} (h : a < b) : a % b = a := UInt128.toNat_inj.1 (Nat.mod_eq_of_lt h)
 
 @[simp] theorem UInt128.toNat_lt (n : UInt128) : n.toNat < 2 ^ 128 := n.toFin.isLt
-
-theorem USize.size_le_uint128Size : USize.size ≤ UInt128.size := by
-  cases USize.size_eq <;> simp_all +decide
 
 theorem USize.size_dvd_uInt128Size : USize.size ∣ UInt128.size := by cases USize.size_eq <;> simp_all +decide
 
@@ -808,13 +810,14 @@ theorem USize.size_dvd_uInt128Size : USize.size ∣ UInt128.size := by cases USi
 @[simp, int_toBitVec] theorem UInt128.toBitVec_toUSize (n : UInt128) : n.toUSize.toBitVec = n.toBitVec.setWidth System.Platform.numBits :=
   BitVec.eq_of_toNat_eq (by simp)
 
-@[simp] theorem UInt128.ofNatLT_uInt8ToNat (n : UInt8) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 := (rfl)
-
-@[simp] theorem UInt128.ofNatLT_uInt16ToNat (n : UInt16) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 := (rfl)
-
-@[simp] theorem UInt128.ofNatLT_uInt32ToNat (n : UInt32) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 := (rfl)
-
-@[simp] theorem UInt128.ofNatLT_toNat (n : UInt128) : UInt128.ofNatLT n.toNat n.toNat_lt = n := (rfl)
+@[simp] theorem UInt128.ofNatLT_uInt8ToNat (n : UInt8) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 :=
+  UInt128.toNat.inj (by simp)
+@[simp] theorem UInt128.ofNatLT_uInt16ToNat (n : UInt16) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 :=
+  UInt128.toNat.inj (by simp)
+@[simp] theorem UInt128.ofNatLT_uInt32ToNat (n : UInt32) : UInt128.ofNatLT n.toNat (Nat.lt_trans n.toNat_lt (by decide)) = n.toUInt128 :=
+  UInt128.toNat.inj (by simp)
+@[simp] theorem UInt128.ofNatLT_toNat (n : UInt128) : UInt128.ofNatLT n.toNat n.toNat_lt = n :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem UInt128.ofNatLT_uSizeToNat (n : USize) : UInt128.ofNatLT n.toNat (Nat.lt_of_lt_of_le n.toNat_lt (by cases USize.size_eq <;> simp_all +decide)) = n.toUInt128 :=
   UInt128.toNat.inj (by simp)
@@ -834,6 +837,8 @@ theorem USize.ofNatLT_uInt128ToNat (n : UInt128) (h) : USize.ofNatLT n.toNat h =
 @[simp] theorem UInt128.ofFin_toFin (n : UInt128) : UInt128.ofFin n.toFin = n := (rfl)
 
 @[simp] theorem UInt128.toFin_ofFin (n : Fin UInt128.size) : (UInt128.ofFin n).toFin = n := (rfl)
+
+@[simp] theorem UInt128.toNat_ofFin' (x : Fin UInt128.size) : (UInt128.ofFin x).toNat = x.val := (rfl)
 
 @[simp] theorem UInt128.ofFin_uint8ToFin (n : UInt8) : UInt128.ofFin (n.toFin.castLE (by decide)) = n.toUInt128 :=
   UInt128.toNat.inj (by simp)
@@ -915,7 +920,7 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 
 @[simp] theorem UInt128.ofNatTruncate_uSizeToNat (n : USize) : UInt128.ofNatTruncate n.toNat = n.toUInt128 := by
   rw [UInt128.ofNatTruncate_eq_ofNat, ofNat_uSizeToNat]
-  exact n.toNat_lt
+  exact Nat.lt_trans n.toNat_lt (by decide)
 
 @[simp] theorem UInt8.toUInt8_toUInt128 (n : UInt8) : n.toUInt128.toUInt8 = n :=
   UInt8.toNat.inj (by simp)
@@ -935,7 +940,8 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 @[simp] theorem UInt8.toUSize_toUInt128 (n : UInt8) : n.toUInt128.toUSize = n.toUSize :=
   USize.toNat.inj (by simp)
 
-@[simp] theorem UInt16.toUInt8_toUInt128 (n : UInt16) : n.toUInt128.toUInt8 = n.toUInt8 := (rfl)
+@[simp] theorem UInt16.toUInt8_toUInt128 (n : UInt16) : n.toUInt128.toUInt8 = n.toUInt8 :=
+  UInt8.toNat.inj (by simp)
 
 @[simp] theorem UInt16.toUInt16_toUInt128 (n : UInt16) : n.toUInt128.toUInt16 = n :=
   UInt16.toNat.inj (by simp)
@@ -943,7 +949,8 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 @[simp] theorem UInt16.toUInt32_toUInt128 (n : UInt16) : n.toUInt128.toUInt32 = n.toUInt32 :=
   UInt32.toNat.inj (by simp)
 
-@[simp] theorem UInt16.toUInt128_toUInt8 (n : UInt16) : n.toUInt8.toUInt128 = n.toUInt128 % 256 := (rfl)
+@[simp] theorem UInt16.toUInt128_toUInt8 (n : UInt16) : n.toUInt8.toUInt128 = n.toUInt128 % 256 :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem UInt16.toUInt128_toUInt32 (n : UInt16) : n.toUInt32.toUInt128 = n.toUInt128 := (rfl)
 
@@ -952,16 +959,20 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 @[simp] theorem UInt16.toUSize_toUInt128 (n : UInt16) : n.toUInt128.toUSize = n.toUSize :=
   USize.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt8_toUInt128 (n : UInt32) : n.toUInt128.toUInt8 = n.toUInt8 := (rfl)
+@[simp] theorem UInt32.toUInt8_toUInt128 (n : UInt32) : n.toUInt128.toUInt8 = n.toUInt8 :=
+  UInt8.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt16_toUInt128 (n : UInt32) : n.toUInt128.toUInt16 = n.toUInt16 := (rfl)
+@[simp] theorem UInt32.toUInt16_toUInt128 (n : UInt32) : n.toUInt128.toUInt16 = n.toUInt16 :=
+  UInt16.toNat.inj (by simp)
 
 @[simp] theorem UInt32.toUInt32_toUInt128 (n : UInt32) : n.toUInt128.toUInt32 = n :=
   UInt32.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt128_toUInt8 (n : UInt32) : n.toUInt8.toUInt128 = n.toUInt128 % 256 := (rfl)
+@[simp] theorem UInt32.toUInt128_toUInt8 (n : UInt32) : n.toUInt8.toUInt128 = n.toUInt128 % 256 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt128_toUInt16 (n : UInt32) : n.toUInt16.toUInt128 = n.toUInt128 % 65536 := (rfl)
+@[simp] theorem UInt32.toUInt128_toUInt16 (n : UInt32) : n.toUInt16.toUInt128 = n.toUInt128 % 65536 :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem UInt32.toUInt128_toUSize (n : UInt32) : n.toUSize.toUInt128 = n.toUInt128 := (rfl)
 
@@ -995,11 +1006,14 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 @[simp] theorem UInt128.toUInt32_toUSize (n : UInt128) : n.toUSize.toUInt32 = n.toUInt32 :=
   UInt32.toNat.inj (by simp)
 
-@[simp] theorem UInt128.toUInt128_toUInt8 (n : UInt128) : n.toUInt8.toUInt128 = n % 256 := (rfl)
+@[simp] theorem UInt128.toUInt128_toUInt8 (n : UInt128) : n.toUInt8.toUInt128 = n % 256 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt128.toUInt128_toUInt16 (n : UInt128) : n.toUInt16.toUInt128 = n % 65536 := (rfl)
+@[simp] theorem UInt128.toUInt128_toUInt16 (n : UInt128) : n.toUInt16.toUInt128 = n % 65536 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt128.toUInt128_toUInt32 (n : UInt128) : n.toUInt32.toUInt128 = n % 4294967296 := (rfl)
+@[simp] theorem UInt128.toUInt128_toUInt32 (n : UInt128) : n.toUInt32.toUInt128 = n % 4294967296 :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem UInt128.toUSize_toUInt8 (n : UInt128) : n.toUInt8.toUSize = n.toUSize % 256 :=
   USize.toNat.inj (by simp)
@@ -1007,13 +1021,17 @@ theorem UInt128.ofNatTruncate_eq_ofNat (n : Nat) (hn : n < UInt128.size) :
 @[simp] theorem UInt128.toUSize_toUInt16 (n : UInt128) : n.toUInt16.toUSize = n.toUSize % 65536 :=
   USize.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt8_toUInt128 (n : USize) : n.toUInt128.toUInt8 = n.toUInt8 := (rfl)
+@[simp] theorem USize.toUInt8_toUInt128 (n : USize) : n.toUInt128.toUInt8 = n.toUInt8 :=
+  UInt8.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt16_toUInt128 (n : USize) : n.toUInt128.toUInt16 = n.toUInt16 := (rfl)
+@[simp] theorem USize.toUInt16_toUInt128 (n : USize) : n.toUInt128.toUInt16 = n.toUInt16 :=
+  UInt16.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt128_toUInt8 (n : USize) : n.toUInt8.toUInt128 = n.toUInt128 % 256 := (rfl)
+@[simp] theorem USize.toUInt128_toUInt8 (n : USize) : n.toUInt8.toUInt128 = n.toUInt128 % 256 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt128_toUInt16 (n : USize) : n.toUInt16.toUInt128 = n.toUInt128 % 65536 := (rfl)
+@[simp] theorem USize.toUInt128_toUInt16 (n : USize) : n.toUInt16.toUInt128 = n.toUInt128 % 65536 :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem USize.toUInt32_toUInt128 (n : USize) : n.toUInt128.toUInt32 = n.toUInt32 :=
   UInt32.toNat.inj (by simp)
@@ -1128,12 +1146,15 @@ theorem UInt128.toUSize_ofNatTruncate_of_le {n : Nat} (hn : UInt128.size ≤ n) 
   USize.toNat.inj (by simp [toNat_ofNatTruncate_of_le hn]; native_decide)
 
 theorem UInt8.toUInt128_ofNatLT {n : Nat} (h) :
-    (UInt8.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) := (rfl)
+    (UInt8.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
 theorem UInt8.toUInt128_ofFin {n} :
-  (UInt8.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) := (rfl)
+  (UInt8.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt8.toUInt128_ofBitVec {b} : (UInt8.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) := (rfl)
+@[simp] theorem UInt8.toUInt128_ofBitVec {b} : (UInt8.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) :=
+  UInt128.toBitVec_inj.1 (by simp)
 
 theorem UInt8.toUInt128_ofNatTruncate_of_lt {n : Nat} (hn : n < UInt8.size) :
     (UInt8.ofNatTruncate n).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le hn (by decide)) :=
@@ -1144,12 +1165,15 @@ theorem UInt8.toUInt128_ofNatTruncate_of_le {n : Nat} (hn : UInt8.size ≤ n) :
   UInt128.toNat.inj (by simp [toNat_ofNatTruncate_of_le hn])
 
 theorem UInt16.toUInt128_ofNatLT {n : Nat} (h) :
-    (UInt16.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) := (rfl)
+    (UInt16.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
 theorem UInt16.toUInt128_ofFin {n} :
-  (UInt16.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) := (rfl)
+  (UInt16.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt16.toUInt128_ofBitVec {b} : (UInt16.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) := (rfl)
+@[simp] theorem UInt16.toUInt128_ofBitVec {b} : (UInt16.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) :=
+  UInt128.toBitVec_inj.1 (by simp)
 
 theorem UInt16.toUInt128_ofNatTruncate_of_lt {n : Nat} (hn : n < UInt16.size) :
     (UInt16.ofNatTruncate n).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le hn (by decide)) :=
@@ -1160,12 +1184,15 @@ theorem UInt16.toUInt128_ofNatTruncate_of_le {n : Nat} (hn : UInt16.size ≤ n) 
   UInt128.toNat.inj (by simp [toNat_ofNatTruncate_of_le hn])
 
 theorem UInt32.toUInt128_ofNatLT {n : Nat} (h) :
-    (UInt32.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) := (rfl)
+    (UInt32.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
 theorem UInt32.toUInt128_ofFin {n} :
-  (UInt32.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) := (rfl)
+  (UInt32.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt (by decide)) :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt128_ofBitVec {b} : (UInt32.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) := (rfl)
+@[simp] theorem UInt32.toUInt128_ofBitVec {b} : (UInt32.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) :=
+  UInt128.toBitVec_inj.1 (by simp)
 
 theorem UInt32.toUInt128_ofNatTruncate_of_lt {n : Nat} (hn : n < UInt32.size) :
     (UInt32.ofNatTruncate n).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le hn (by decide)) :=
@@ -1176,10 +1203,12 @@ theorem UInt32.toUInt128_ofNatTruncate_of_le {n : Nat} (hn : UInt32.size ≤ n) 
   UInt128.toNat.inj (by simp [toNat_ofNatTruncate_of_le hn])
 
 theorem USize.toUInt128_ofNatLT {n : Nat} (h) :
-    (USize.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h size_le_uint128Size) := (rfl)
+    (USize.ofNatLT n h).toUInt128 = UInt128.ofNatLT n (Nat.lt_of_lt_of_le h size_le_uint128Size) :=
+  UInt128.toNat.inj (by simp)
 
 theorem USize.toUInt128_ofFin {n} :
-  (USize.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt size_le_uint128Size) := (rfl)
+  (USize.ofFin n).toUInt128 = UInt128.ofNatLT n.val (Nat.lt_of_lt_of_le n.isLt size_le_uint128Size) :=
+  UInt128.toNat.inj (by simp)
 
 @[simp] theorem USize.toUInt128_ofBitVec {b} : (USize.ofBitVec b).toUInt128 = UInt128.ofBitVec (b.setWidth _) :=
   UInt128.toBitVec_inj.1 (by simp)
@@ -1245,13 +1274,17 @@ theorem USize.toUInt128_ofNatTruncate_of_le {n : Nat} (hn : USize.size ≤ n) :
 
 @[simp] protected theorem UInt128.toFin_div (a b : UInt128) : (a / b).toFin = a.toFin / b.toFin := (rfl)
 
-@[simp] theorem UInt8.toUInt128_div (a b : UInt8) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 := (rfl)
+@[simp] theorem UInt8.toUInt128_div (a b : UInt8) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt16.toUInt128_div (a b : UInt16) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 := (rfl)
+@[simp] theorem UInt16.toUInt128_div (a b : UInt16) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt128_div (a b : UInt32) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 := (rfl)
+@[simp] theorem UInt32.toUInt128_div (a b : UInt32) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt128_div (a b : USize) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 := (rfl)
+@[simp] theorem USize.toUInt128_div (a b : USize) : (a / b).toUInt128 = a.toUInt128 / b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
 theorem UInt128.toUInt8_div (a b : UInt128) (ha : a < 256) (hb : b < 256) : (a / b).toUInt8 = a.toUInt8 / b.toUInt8 :=
   UInt8.toNat.inj (by simpa using Nat.div_mod_eq_mod_div_mod ha hb)
@@ -1271,13 +1304,17 @@ theorem UInt128.toUSize_div_of_toNat_lt (a b : UInt128) (ha : a.toNat < USize.si
 
 @[simp] protected theorem UInt128.toFin_mod (a b : UInt128) : (a % b).toFin = a.toFin % b.toFin := (rfl)
 
-@[simp] theorem UInt8.toUInt128_mod (a b : UInt8) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 := (rfl)
+@[simp] theorem UInt8.toUInt128_mod (a b : UInt8) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt16.toUInt128_mod (a b : UInt16) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 := (rfl)
+@[simp] theorem UInt16.toUInt128_mod (a b : UInt16) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem UInt32.toUInt128_mod (a b : UInt32) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 := (rfl)
+@[simp] theorem UInt32.toUInt128_mod (a b : UInt32) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
-@[simp] theorem USize.toUInt128_mod (a b : USize) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 := (rfl)
+@[simp] theorem USize.toUInt128_mod (a b : USize) : (a % b).toUInt128 = a.toUInt128 % b.toUInt128 :=
+  UInt128.toNat.inj (by simp)
 
 theorem UInt128.toUInt8_mod (a b : UInt128) (ha : a < 256) (hb : b < 256) : (a % b).toUInt8 = a.toUInt8 % b.toUInt8 :=
   UInt8.toNat.inj (by simpa using Nat.mod_mod_eq_mod_mod_mod ha hb)
@@ -1437,7 +1474,10 @@ theorem UInt128.le_iff_toFin_le {a b : UInt128} : a ≤ b ↔ a.toFin ≤ b.toFi
 
 @[simp] theorem UInt128.toUInt32_neg (a : UInt128) : (-a).toUInt32 = -a.toUInt32 := UInt32.toBitVec_inj.1 (by simp)
 
-@[simp] theorem UInt128.toUSize_neg (a : UInt128) : (-a).toUSize = -a.toUSize := USize.toBitVec_inj.1 (by simp)
+@[simp] theorem UInt128.toUSize_neg (a : UInt128) : (-a).toUSize = -a.toUSize :=
+  USize.toBitVec_inj.1 (by
+    simp only [UInt128.toBitVec_toUSize, UInt128.toBitVec_neg, USize.toBitVec_neg]
+    exact BitVec.setWidth_neg_of_le (Nat.le_trans System.Platform.numBits_le (by decide)))
 
 @[simp] theorem UInt8.toUInt128_neg (a : UInt8) : (-a).toUInt128 = -a.toUInt128 % 256 := by
   simp [UInt8.toUInt128_eq_mod_256_iff]
@@ -1473,7 +1513,7 @@ theorem UInt128.sub_eq_add_mul (a b : UInt128) : a - b = a + 3402823669209384634
   rw [UInt128.sub_eq_add_neg, neg_eq_neg_one_mul, neg_one_eq]
 
 @[simp] theorem USize.ofNat_uInt128Size_sub_one : USize.ofNat (UInt128.size - 1) = USize.ofNatLT (USize.size - 1) (Nat.sub_one_lt (Nat.pos_iff_ne_zero.1 size_pos)) :=
-  USize.toNat.inj (by simp)
+  USize.toNat.inj (by cases USize.size_eq <;> native_decide)
 
 @[simp] theorem UInt128.toUInt8_sub (a b : UInt128) : (a - b).toUInt8 = a.toUInt8 - b.toUInt8 := by
   simp [UInt128.sub_eq_add_neg, UInt8.sub_eq_add_neg]
@@ -1931,7 +1971,7 @@ theorem ISize.int128MinValue_le_toInt (x : ISize) : Int128.minValue.toInt ≤ x.
   Int.le_trans (by decide) x.le_toInt
 
 theorem ISize.toInt_le_int128MaxValue (x : ISize) : x.toInt ≤ Int128.maxValue.toInt :=
-  Int.le_of_lt_add_one x.toInt_lt
+  Int.le_trans x.toInt_le (by native_decide)
 
 theorem Int128.toNatClampNeg_lt (x : Int128) : x.toNatClampNeg < 2 ^ 127 := (Int.toNat_lt' (by decide)).2 x.toInt_lt
 
@@ -2291,7 +2331,9 @@ theorem Int128.toISize_ofIntLE {n} (h₁ h₂) : (Int128.ofIntLE n h₁ h₂).to
 @[simp] theorem Int128.toISize_ofBitVec (b) : (Int128.ofBitVec b).toISize = ISize.ofBitVec (b.signExtend _) := (rfl)
 
 @[simp] theorem Int128.toISize_ofNat' {n} : (Int128.ofNat n).toISize = ISize.ofNat n :=
-  ISize.toBitVec.inj (by simp [BitVec.signExtend_eq_setWidth_of_le])
+  ISize.toBitVec.inj (by
+    cases System.Platform.numBits_eq <;>
+      simp_all [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_ofNat_of_le])
 
 @[simp] theorem Int128.toISize_ofInt {n} : (Int128.ofInt n).toISize = ISize.ofInt n :=
  ISize.toInt.inj (by simpa [ISize.toInt_ofInt] using Int.bmod_bmod_of_dvd USize.size_dvd_uInt128Size)
@@ -2312,7 +2354,10 @@ theorem Int128.toISize_ofIntTruncate {n : Int} (h₁ : -2 ^ 127 ≤ n) (h₂ : n
 
 @[simp] theorem Int128.toInt32_neg (x : Int128) : (-x).toInt32 = -x.toInt32 := Int32.toBitVec.inj (by simp)
 
-@[simp] theorem Int128.toISize_neg (x : Int128) : (-x).toISize = -x.toISize := ISize.toBitVec.inj (by simp)
+@[simp] theorem Int128.toISize_neg (x : Int128) : (-x).toISize = -x.toISize :=
+  ISize.toBitVec.inj (by
+    simp only [Int128.toBitVec_toISize, Int128.toBitVec_neg, ISize.toBitVec_neg]
+    exact BitVec.signExtend_neg_of_le (Nat.le_trans System.Platform.numBits_le (by decide)) _)
 
 @[simp] theorem Int8.toInt128_neg_of_ne {x : Int8} (hx : x ≠ -128) : (-x).toInt128 = -x.toInt128 :=
   Int128.toBitVec.inj (BitVec.signExtend_neg_of_ne_intMin _ (fun h => hx (Int8.toBitVec.inj h)))
@@ -2388,8 +2433,7 @@ theorem ISize.toInt128_ofIntLE {n : Int} (h₁ h₂) :
 @[simp] theorem ISize.toInt128_ofNat' {n : Nat} (h : n ≤ ISize.maxValue.toInt) :
     (ISize.ofNat n).toInt128 = Int128.ofNat n := by
   rw [← ofInt_eq_ofNat, toInt128_ofInt _ h, Int128.ofInt_eq_ofNat]
-  refine Int.le_trans ?_ (Int.zero_le_ofNat _)
-  cases System.Platform.numBits_eq <;> simp_all [ISize.toInt_minValue]
+  exact Int.le_trans (by native_decide) (Int.zero_le_ofNat _)
 
 @[simp] theorem ISize.toInt128_ofNat {n : Nat} (h : n ≤ 2147483647) :
     toInt128 (no_index (OfNat.ofNat n)) = OfNat.ofNat n :=
@@ -2420,14 +2464,16 @@ theorem Int128.ofBitVec_ofNatLT (n : Nat) (hn) : Int128.ofBitVec (BitVec.ofNatLT
 @[simp] theorem Int128.toNatClampNeg_eq_zero_iff {n : Int128} : n.toNatClampNeg = 0 ↔ n ≤ 0 := by
   rw [toNatClampNeg, Int.toNat_eq_zero, le_iff_toInt_le, toInt_zero]
 
-@[simp] protected theorem Int32.not_le {n m : Int32} : ¬n ≤ m ↔ m < n := by simp [le_iff_toInt_le, lt_iff_toInt_lt]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] protected theorem Int32.not_le {n m : Int32} : ¬n ≤ m ↔ m < n := by simp [le_iff_toInt_le, lt_iff_toInt_lt]
 @[simp] protected theorem Int128.not_le {n m : Int128} : ¬n ≤ m ↔ m < n := by simp [le_iff_toInt_le, lt_iff_toInt_lt]
 
 @[simp] theorem Int128.neg_nonpos_iff (n : Int128) : -n ≤ 0 ↔ n = minValue ∨ 0 ≤ n := by
   rw [le_iff_toBitVec_sle, toBitVec_zero, toBitVec_neg, BitVec.neg_sle_zero (by decide)]
   simp [← toBitVec_inj, le_iff_toBitVec_sle, BitVec.intMin_eq_neg_two_pow]
 
-@[simp] theorem Int32.toNatClampNeg_pos_iff (n : Int32) : 0 < n.toNatClampNeg ↔ 0 < n := by simp [Nat.pos_iff_ne_zero]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] theorem Int32.toNatClampNeg_pos_iff (n : Int32) : 0 < n.toNatClampNeg ↔ 0 < n := by simp [Nat.pos_iff_ne_zero]
 @[simp] theorem Int128.toNatClampNeg_pos_iff (n : Int128) : 0 < n.toNatClampNeg ↔ 0 < n := by simp [Nat.pos_iff_ne_zero]
 
 @[simp] theorem Int128.toInt_div (a b : Int128) : (a / b).toInt = (a.toInt.tdiv b.toInt).bmod (2 ^ 128) := by
@@ -2451,9 +2497,12 @@ theorem Int32.toInt128_ne_minValue (a : Int32) : a.toInt128 ≠ Int128.minValue 
   have := a.le_toInt; by simp [← Int128.toInt_inj]; omega
 
 theorem ISize.toInt128_ne_minValue (a : ISize) (ha : a ≠ minValue) : a.toInt128 ≠ Int128.minValue := by
-  have := a.minValue_le_toInt
-  have : -2 ^ 127 ≤ minValue.toInt := minValue.le_toInt
-  simp [← Int128.toInt_inj, ← ISize.toInt_inj] at *; omega
+  intro heq
+  have hle := a.minValue_le_toInt
+  have h : a.toInt = Int128.minValue.toInt :=
+    by simpa [ISize.toInt_toInt128] using congrArg Int128.toInt heq
+  have hlt : Int128.minValue.toInt < ISize.minValue.toInt := by native_decide
+  omega
 
 theorem Int8.toInt128_ne_neg_one (a : Int8) (ha : a ≠ -1) : a.toInt128 ≠ -1 :=
   ne_of_apply_ne Int128.toInt8 (by simpa using ha)
@@ -2514,7 +2563,9 @@ theorem ISize.toInt128_div_of_ne_right (a b : ISize) (hb : b ≠ -1) : (a / b).t
   Int32.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
 
 @[simp] theorem Int128.toISize_add (a b : Int128) : (a + b).toISize = a.toISize + b.toISize :=
-  ISize.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
+  ISize.toBitVec_inj.1 (by
+    cases System.Platform.numBits_eq <;>
+      simp_all [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_add])
 
 @[simp] theorem Int128.toInt_mul (a b : Int128) : (a * b).toInt = (a.toInt * b.toInt).bmod (2 ^ 128) := by
   rw [← toInt_toBitVec, Int128.toBitVec_mul, BitVec.toInt_mul, toInt_toBitVec, toInt_toBitVec]
@@ -2529,7 +2580,9 @@ theorem ISize.toInt128_div_of_ne_right (a b : ISize) (hb : b ≠ -1) : (a / b).t
   Int32.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
 
 @[simp] theorem Int128.toISize_mul (a b : Int128) : (a * b).toISize = a.toISize * b.toISize :=
-  ISize.toBitVec_inj.1 (by simp [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
+  ISize.toBitVec_inj.1 (by
+    cases System.Platform.numBits_eq <;>
+      simp_all [BitVec.signExtend_eq_setWidth_of_le, BitVec.setWidth_mul])
 
 protected theorem Int128.sub_eq_add_neg (a b : Int128) : a - b = a + -b := Int128.toBitVec.inj (by simp [BitVec.sub_eq_add_neg])
 
@@ -2718,10 +2771,12 @@ protected theorem Int128.sub_eq_iff_eq_add {a b c : Int128} : a - b = c ↔ a = 
 
 @[simp] protected theorem Int128.neg_neg {a : Int128} : - -a = a := Int128.toBitVec_inj.1 BitVec.neg_neg
 
-@[simp] protected theorem Int32.neg_inj {a b : Int32} : -a = -b ↔ a = b := by simp [← Int32.toBitVec_inj]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] protected theorem Int32.neg_inj {a b : Int32} : -a = -b ↔ a = b := by simp [← Int32.toBitVec_inj]
 @[simp] protected theorem Int128.neg_inj {a b : Int128} : -a = -b ↔ a = b := by simp [← Int128.toBitVec_inj]
 
-@[simp] protected theorem Int32.neg_ne_zero {a : Int32} : -a ≠ 0 ↔ a ≠ 0 := by simp [← Int32.toBitVec_inj]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] protected theorem Int32.neg_ne_zero {a : Int32} : -a ≠ 0 ↔ a ≠ 0 := by simp [← Int32.toBitVec_inj]
 @[simp] protected theorem Int128.neg_ne_zero {a : Int128} : -a ≠ 0 ↔ a ≠ 0 := by simp [← Int128.toBitVec_inj]
 
 protected theorem Int128.neg_add {a b : Int128} : - (a + b) = -a - b := Int128.toBitVec_inj.1 BitVec.neg_add
@@ -2823,7 +2878,8 @@ protected theorem Int128.lt_of_le_of_ne {a b : Int128} : a ≤ b → a ≠ b →
 protected theorem Int128.lt_iff_le_and_ne {a b : Int128} : a < b ↔ a ≤ b ∧ a ≠ b := by
   simpa [lt_iff_toInt_lt, le_iff_toInt_le, ← Int128.toInt_inj] using Int.lt_iff_le_and_ne
 
-@[simp] protected theorem Int32.lt_irrefl {a : Int32} : ¬a < a := by simp [lt_iff_toInt_lt]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] protected theorem Int32.lt_irrefl {a : Int32} : ¬a < a := by simp [lt_iff_toInt_lt]
 @[simp] protected theorem Int128.lt_irrefl {a : Int128} : ¬a < a := by simp [lt_iff_toInt_lt]
 
 protected theorem Int128.lt_of_le_of_lt {a b c : Int128} : a ≤ b → b < c → a < c := by
@@ -2842,7 +2898,8 @@ protected theorem Int128.lt_of_lt_of_le {a b c : Int128} : a < b → b ≤ c →
 @[simp] theorem Int128.not_maxValue_lt {a : Int128} : ¬maxValue < a :=
   fun h => Int128.lt_irrefl (Int128.lt_of_lt_of_le h a.le_maxValue)
 
-@[simp] protected theorem Int32.le_refl (a : Int32) : a ≤ a := by simp [Int32.le_iff_toInt_le]
+-- Already declared in Lean core; duplicate removed.
+-- @[simp] protected theorem Int32.le_refl (a : Int32) : a ≤ a := by simp [Int32.le_iff_toInt_le]
 @[simp] protected theorem Int128.le_refl (a : Int128) : a ≤ a := by simp [Int128.le_iff_toInt_le]
 
 protected theorem Int128.le_rfl {a : Int128} : a ≤ a := Int128.le_refl _
