@@ -1,6 +1,6 @@
 CHARON ?= charon
 AENEAS ?= aeneas
-RUSTFLAGS ?= "--cfg charon"
+export RUSTFLAGS ?= "--cfg charon"
 
 # `hax-lib` git revision, derived from the workspace Cargo.toml so the
 # alloc-staging step (which inlines an explicit `hax-lib = { git, rev }`
