@@ -97,4 +97,5 @@ jobs:
     - name: Build example
       run: |
         cd examples
+        PATH="$HOME/.cargo/bin:$PATH" nix develop ..#ci-examples --command make clean -C ${{ matrix.example }}
         PATH="$HOME/.cargo/bin:$PATH" nix develop ..#ci-examples --command make -C ${{ matrix.example }}
