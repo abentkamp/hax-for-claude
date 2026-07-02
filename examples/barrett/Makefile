@@ -18,7 +18,7 @@ rust:
 	cargo build
 
 clean:
-	find proofs/aeneas-lean/LeanBarrett/Extraction -type f ! -name FunsExternal.lean -delete
+	find proofs/aeneas-lean/Barrett/Extraction -type f ! -name FunsExternal.lean -delete
 	(cd proofs/aeneas-lean && lake clean)
 	rm -f proofs/fstar/extraction/.depend
 	rm -f proofs/fstar/extraction/*.fst

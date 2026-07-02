@@ -42,7 +42,7 @@ The `<EXAMPLE>/proofs/coq/extraction` folders contain the generated Coq modules.
 
 ## Aeneas-Lean
 
-For the Aeneas-Lean backend, we have three examples: `lean_barrett`, `sha3`, and `loop_equivalence`.
+For the Aeneas-Lean backend, we have three examples: `barrett`, `sha3`, and `loop_equivalence`.
 
 ### Barrett reduction
 
@@ -52,13 +52,13 @@ provided that the input is small enough.
 
 The proof can be run as follows:
 ```sh
-cd lean_barrett/
+cd barrett/
 make aeneas-lean
 ```
 
-This extracts the Rust code from `lean_barrett/src/lib.rs` into
-`examples/lean_barrett/proofs/aeneas-lean/LeanBarrett/Extraction/Funs.lean`. The Lean proof can be found in
-`examples/lean_barrett/proofs/aeneas-lean/LeanBarrett/Verification.lean`.
+This extracts the Rust code from `barrett/src/lib.rs` into
+`examples/barrett/proofs/aeneas-lean/Barrett/Extraction/Funs.lean`. The Lean proof can be found in
+`examples/barrett/proofs/aeneas-lean/Barrett/Proofs/Proofs.lean`.
 
 ### SHA-3
 
@@ -98,33 +98,8 @@ make
 
 ## Lean (legacy backend)
 
-Three examples are fine-tuned to showcase the Lean backend: `lean_barrett`,
-`lean_chacha20`, and `lean_adc`. For all of them, the lean extraction can be
+Two examples are fine-tuned to showcase the Lean backend: `lean_chacha20` and `lean_adc`. For all of them, the lean extraction can be
 obtained by running `cargo hax into lean`.
-
-### Barrett
-
-The *Barrett reduction* allows to compute remainders without using divisions. It
-showcases arithmetic operations, conversions between integer types (namely `i32`
-and `i64`). The Lean backend provides *panicking* arithmetic operations `+?`,
-`-?`, etc, that panic on overflows.
-
-For the Lean extracted code, we prove panic freedom with regards to those
-arithmetic operations, and then we prove that the result is indeed the modulus
-(as long as the absolute value of the input is lower than the bound
-`BARRETT_R`). The proof is made via bit-blasting (using Lean's `bv_decide`). To
-limit the computation time, the bound `BARRETT_R` was lowered compared to the
-normal example in the `barrett` folder.
-
-The proofs are backported in the rust code (in `lean_barrett/src/lib.rs`): doing
-`cargo hax into lean` extracts a valid lean file that contains the proof.
-
-The proof can be run by doing (requires `lake`):
-
-```sh
-cd lean_barrett/
-make lean
-```
 
 ### ADC (Addition with Carry)
 
