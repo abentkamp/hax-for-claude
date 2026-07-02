@@ -3,6 +3,45 @@
 version = 4
 
 [[package]]
+name = "anodized"
+version = "0.5.1"
+source = "git+https://github.com/anodized-rs/anodized?rev=f9334c40e4e3afd0a01ed88747e9f5932d3ac35a#f9334c40e4e3afd0a01ed88747e9f5932d3ac35a"
+dependencies = [
+ "anodized-logic",
+ "anodized-macros",
+]
+
+[[package]]
+name = "anodized-core"
+version = "0.5.1"
+source = "git+https://github.com/anodized-rs/anodized?rev=f9334c40e4e3afd0a01ed88747e9f5932d3ac35a#f9334c40e4e3afd0a01ed88747e9f5932d3ac35a"
+dependencies = [
+ "bitflags",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
+name = "anodized-logic"
+version = "0.5.1"
+source = "git+https://github.com/anodized-rs/anodized?rev=f9334c40e4e3afd0a01ed88747e9f5932d3ac35a#f9334c40e4e3afd0a01ed88747e9f5932d3ac35a"
+dependencies = [
+ "num-bigint",
+]
+
+[[package]]
+name = "anodized-macros"
+version = "0.5.1"
+source = "git+https://github.com/anodized-rs/anodized?rev=f9334c40e4e3afd0a01ed88747e9f5932d3ac35a#f9334c40e4e3afd0a01ed88747e9f5932d3ac35a"
+dependencies = [
+ "anodized-core",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.75"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -49,6 +88,12 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "bitflags"
+version = "2.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "block-buffer"
@@ -407,6 +452,7 @@ dependencies = [
 name = "lean_barrett"
 version = "0.1.0"
 dependencies = [
+ "anodized",
  "hax-lib",
 ]
 
@@ -511,11 +557,10 @@ checksum = "f665ee40bc4a3c5590afb1e9677db74a508659dfd71e126420da8274909a0167"
 
 [[package]]
 name = "num-bigint"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "608e7659b5c3d7cba262d894801b9ec9d00de989e8a82bd4bef91d08da45cdc0"
+checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
- "autocfg",
  "num-integer",
  "num-traits",
  "serde",
@@ -523,19 +568,18 @@ dependencies = [
 
 [[package]]
 name = "num-integer"
-version = "0.1.45"
+version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
+checksum = "7969661fd2958a5cb096e56c8e1ad0444ac2bbcd0061bd28660485a44879858f"
 dependencies = [
- "autocfg",
  "num-traits",
 ]
 
 [[package]]
 name = "num-traits"
-version = "0.2.17"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39e3200413f237f41ab11ad6d161bc7239c84dcb631773ccd7de3dfe4b5c267c"
+checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]

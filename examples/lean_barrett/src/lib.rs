@@ -1,4 +1,4 @@
-use hax_lib::*;
+use anodized::spec;
 
 /// Values having this type hold a representative 'x' of the Kyber field.
 /// We use 'fe' as a shorthand for this type.
@@ -24,14 +24,18 @@ pub(crate) const FIELD_MODULUS: i32 = 3329;
 //
 // In particular, if `|value| < BARRETT_R`, then `|result| < FIELD_MODULUS`.
 
-#[requires(i64::from(value) >= -BARRETT_R && i64::from(value) <= BARRETT_R)]
-#[ensures(|result| {
-    let valid_result = value % FIELD_MODULUS;
-    result > -FIELD_MODULUS
-        && result < FIELD_MODULUS
-        && (result == valid_result
-            || result == valid_result + FIELD_MODULUS
-            || result == valid_result - FIELD_MODULUS) })]
+#[spec(
+    requires: i64::from(value) >= -BARRETT_R && i64::from(value) <= BARRETT_R,
+    binds: result,
+    ensures: {
+        let valid_result = value % FIELD_MODULUS;
+        *result > -FIELD_MODULUS
+            && *result < FIELD_MODULUS
+            && (*result == valid_result
+                || *result == valid_result + FIELD_MODULUS
+                || *result == valid_result - FIELD_MODULUS)
+    },
+)]
 pub fn barrett_reduce(value: FieldElement) -> FieldElement {
     let t = i64::from(value) * BARRETT_MULTIPLIER;
     let t = t + (BARRETT_R >> 1);

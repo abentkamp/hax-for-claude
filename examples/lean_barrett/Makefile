@@ -1,7 +1,7 @@
 .PHONY:  aeneas-lean clean
 
 aeneas-lean:
-	cargo hax into aeneas-lean --aeneas-args="-core-models-lib"
+	RUSTFLAGS="--cfg anodized_hax" cargo hax into aeneas-lean --aeneas-args="-core-models-lib"
 	(cd proofs/aeneas-lean && \
    lake exe cache get && \
    lake build)

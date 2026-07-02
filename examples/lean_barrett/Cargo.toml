@@ -3,7 +3,9 @@ name = "lean_barrett"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(anodized_hax)"] }
 
 [dependencies]
 hax-lib.workspace = true
+anodized = { git = "https://github.com/anodized-rs/anodized", rev = "f9334c40e4e3afd0a01ed88747e9f5932d3ac35a" }

@@ -462,6 +462,82 @@ pub fn ensures(attr: pm::TokenStream, item: pm::TokenStream) -> pm::TokenStream 
     .into()
 }
 
+/// Add a logical postcondition to a function, where the closure takes
+/// the result by reference (`&T`). Occurrences of `*<binder>` in the
+/// body are rewritten to `<binder>` so the standard hax extraction
+/// machinery applies unchanged.
+///
+/// # Example
+///
+/// ```
+/// use hax_lib_macros::*;
+/// #[ensures_ref(|result| *result == x * 2)]
+/// pub fn twice(x: u64) -> u64 {
+///     x + x
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn ensures_ref(attr: pm::TokenStream, item: pm::TokenStream) -> pm::TokenStream {
+    let ExprClosure1 {
+        arg: ret_binder,
+        body: phi,
+    } = parse_macro_input!(attr);
+    let phi = strip_deref_of_binder(&ret_binder, phi);
+    let item: FnLike = parse_macro_input!(item);
+    let kind = FnDecorationKind::Ensures {
+        ret_binder: ret_binder.clone(),
+    };
+    let (ensures, attr) = make_fn_decoration(phi.clone(), item.sig.clone(), kind, None, None);
+    quote! {
+        #ensures #attr
+        #item
+    }
+    .into()
+}
+
+/// Strips one level of deref from every `*<ident>` expression in `phi`
+/// where `<ident>` matches the name bound by `binder`. Returns `phi`
+/// unchanged if `binder` is not a simple identifier pattern.
+fn strip_deref_of_binder(binder: &Pat, mut phi: Expr) -> Expr {
+    let Some(ident_name) = binder.expect_ident().map(|i| i.to_string()) else {
+        return phi;
+    };
+    struct StripDeref(String);
+    impl VisitMut for StripDeref {
+        fn visit_expr_mut(&mut self, expr: &mut Expr) {
+            syn::visit_mut::visit_expr_mut(self, expr);
+            let inner_clone = if let Expr::Unary(ExprUnary {
+                op: UnOp::Deref(_),
+                expr: inner,
+                ..
+            }) = &*expr
+            {
+                if let Expr::Path(ExprPath {
+                    qself: None,
+                    path,
+                    ..
+                }) = inner.as_ref()
+                {
+                    if path.is_ident(self.0.as_str()) {
+                        Some((**inner).clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(inner) = inner_clone {
+                *expr = inner;
+            }
+        }
+    }
+    StripDeref(ident_name).visit_expr_mut(&mut phi);
+    phi
+}
+
 mod kw {
     syn::custom_keyword!(hax_lib);
     syn::custom_keyword!(decreases);
