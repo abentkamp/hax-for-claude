@@ -72,4 +72,87 @@ theorem chacha20_double_round_spec (state : Array Std.U32 16#usize) :
   unfold chacha20_double_round
   hax_mvcgen
 
+/-- `xor_state` is panic-free: a `0..16` loop over the length-16 state. -/
+@[spec]
+theorem xor_state_spec (state other : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.xor_state state other
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.xor_state hacspec_helper.xor_state_loop
+    hacspec_helper.xor_state_loop.body
+  for_loop_with_invariant fun _ _ => pure True
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `add_state` is panic-free: a `0..16` loop over the length-16 state. -/
+@[spec]
+theorem add_state_spec (state other : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.add_state state other
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.add_state hacspec_helper.add_state_loop
+    hacspec_helper.add_state_loop.body
+  simp only [core.num.U32.wrapping_add, rust_primitives.arithmetic.wrapping_add_u32]
+  for_loop_with_invariant fun _ _ => pure True
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Inner loop of `u32s_to_le_bytes`: writes bytes `i*4 .. i*4+4` of the output.
+Panic-free provided `i < 16` (so `i*4+j < 64`). -/
+@[spec]
+theorem u32s_to_le_bytes_inner_spec
+    (out : Array Std.U8 64#usize) (i : Std.Usize) (tmp : Array Std.U8 4#usize)
+    (hi : i.val < 16) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.u32s_to_le_bytes_loop0_loop0 { start := 0#usize, «end» := 4#usize } out i tmp
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.u32s_to_le_bytes_loop0_loop0
+    hacspec_helper.u32s_to_le_bytes_loop0_loop0.body
+  for_loop_with_invariant fun _ _ => pure True
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Outer loop of `u32s_to_le_bytes` over `0..e` with `e ≤ 16`: reads `state[i]`
+(`i < 16`) and runs the inner loop (panic-free since `i < 16`). -/
+@[spec]
+theorem u32s_to_le_bytes_loop0_spec
+    (state : Array Std.U32 16#usize) (out : Array Std.U8 64#usize) (e : Std.Usize)
+    (he : e.val ≤ 16) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.u32s_to_le_bytes_loop0 { start := 0#usize, «end» := e } state out
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.u32s_to_le_bytes_loop0 hacspec_helper.u32s_to_le_bytes_loop0.body
+  simp only [core.num.U32.to_le_bytes, rust_primitives.arithmetic.to_le_bytes_u32]
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `u32s_to_le_bytes` is panic-free: the outer loop runs over `0..16`. -/
+@[spec]
+theorem u32s_to_le_bytes_spec (state : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.u32s_to_le_bytes state
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.u32s_to_le_bytes
+  simp only [core.slice.Slice.len]
+  hax_mvcgen
+  all_goals first
+    | (simp only [Slice.len, Array.length_to_slice]; scalar_tac)
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
 end chacha20
