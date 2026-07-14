@@ -1,9 +1,16 @@
 module Chacha20.Hacspec_helper
-#set-options "--fuel 0 --ifuel 1 --z3rlimit 40"
+#set-options "--fuel 0 --ifuel 1 --z3rlimit 15"
 open FStar.Mul
 open Core_models
 
-let to_le_u32s_3_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 3) =
+let to_le_u32s_3_ (bytes: t_Slice u8)
+    : Prims.Pure (t_Array u32 (mk_usize 3))
+      (requires
+        (Core_models.Slice.impl__len #u8 bytes <: usize) >=. (mk_usize 4 *! mk_usize 3 <: usize))
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u32 (mk_usize 3) = temp_0_ in
+          true) =
   let out:t_Array u32 (mk_usize 3) = Rust_primitives.Hax.repeat (mk_u32 0) (mk_usize 3) in
   let out:t_Array u32 (mk_usize 3) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
@@ -46,7 +53,14 @@ let to_le_u32s_3_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 3) =
   in
   out
 
-let to_le_u32s_8_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 8) =
+let to_le_u32s_8_ (bytes: t_Slice u8)
+    : Prims.Pure (t_Array u32 (mk_usize 8))
+      (requires
+        (Core_models.Slice.impl__len #u8 bytes <: usize) >=. (mk_usize 4 *! mk_usize 8 <: usize))
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u32 (mk_usize 8) = temp_0_ in
+          true) =
   let out:t_Array u32 (mk_usize 8) = Rust_primitives.Hax.repeat (mk_u32 0) (mk_usize 8) in
   let out:t_Array u32 (mk_usize 8) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
@@ -89,7 +103,14 @@ let to_le_u32s_8_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 8) =
   in
   out
 
-let to_le_u32s_16_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 16) =
+let to_le_u32s_16_ (bytes: t_Slice u8)
+    : Prims.Pure (t_Array u32 (mk_usize 16))
+      (requires
+        (Core_models.Slice.impl__len #u8 bytes <: usize) >=. (mk_usize 4 *! mk_usize 16 <: usize))
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u32 (mk_usize 16) = temp_0_ in
+          true) =
   let out:t_Array u32 (mk_usize 16) = Rust_primitives.Hax.repeat (mk_u32 0) (mk_usize 16) in
   let out:t_Array u32 (mk_usize 16) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
@@ -132,7 +153,13 @@ let to_le_u32s_16_ (bytes: t_Slice u8) : t_Array u32 (mk_usize 16) =
   in
   out
 
-let u32s_to_le_bytes (state: t_Array u32 (mk_usize 16)) : t_Array u8 (mk_usize 64) =
+let u32s_to_le_bytes (state: t_Array u32 (mk_usize 16))
+    : Prims.Pure (t_Array u8 (mk_usize 64))
+      Prims.l_True
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u8 (mk_usize 64) = temp_0_ in
+          true) =
   let out:t_Array u8 (mk_usize 64) = Rust_primitives.Hax.repeat (mk_u8 0) (mk_usize 64) in
   let out:t_Array u8 (mk_usize 64) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
@@ -166,7 +193,13 @@ let u32s_to_le_bytes (state: t_Array u32 (mk_usize 16)) : t_Array u8 (mk_usize 6
   in
   out
 
-let xor_state (state other: t_Array u32 (mk_usize 16)) : t_Array u32 (mk_usize 16) =
+let xor_state (state other: t_Array u32 (mk_usize 16))
+    : Prims.Pure (t_Array u32 (mk_usize 16))
+      Prims.l_True
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u32 (mk_usize 16) = temp_0_ in
+          true) =
   let state:t_Array u32 (mk_usize 16) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
       (mk_usize 16)
@@ -186,7 +219,13 @@ let xor_state (state other: t_Array u32 (mk_usize 16)) : t_Array u32 (mk_usize 1
   in
   state
 
-let add_state (state other: t_Array u32 (mk_usize 16)) : t_Array u32 (mk_usize 16) =
+let add_state (state other: t_Array u32 (mk_usize 16))
+    : Prims.Pure (t_Array u32 (mk_usize 16))
+      Prims.l_True
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u32 (mk_usize 16) = temp_0_ in
+          true) =
   let state:t_Array u32 (mk_usize 16) =
     Rust_primitives.Hax.Folds.fold_range (mk_usize 0)
       (mk_usize 16)
@@ -207,7 +246,13 @@ let add_state (state other: t_Array u32 (mk_usize 16)) : t_Array u32 (mk_usize 1
   in
   state
 
-let update_array (array: t_Array u8 (mk_usize 64)) (v_val: t_Slice u8) : t_Array u8 (mk_usize 64) =
+let update_array (array: t_Array u8 (mk_usize 64)) (v_val: t_Slice u8)
+    : Prims.Pure (t_Array u8 (mk_usize 64))
+      (requires (Core_models.Slice.impl__len #u8 v_val <: usize) <=. mk_usize 64)
+      (ensures
+        fun temp_0_ ->
+          let _:t_Array u8 (mk_usize 64) = temp_0_ in
+          true) =
   let _:Prims.unit =
     Hax_lib.v_assert (mk_usize 64 >=. (Core_models.Slice.impl__len #u8 v_val <: usize) <: bool)
   in

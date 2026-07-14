@@ -11,6 +11,7 @@ use super::State;
 
 macro_rules! to_le_u32s_impl {
     ($name:ident,$l:literal) => {
+        #[hax_lib::requires(bytes.len() >= 4 * $l)]
         #[hax_lib::ensures(|_| true)]
         pub(super) fn $name(bytes: &[u8]) -> [u32; $l] {
             // assert_eq!($l, bytes.len() / 4);
@@ -56,6 +57,7 @@ pub(super) fn add_state(mut state: State, other: State) -> State {
     state
 }
 
+#[hax_lib::requires(val.len() <= 64)]
 #[hax_lib::ensures(|_| true)]
 pub(super) fn update_array(mut array: [u8; 64], val: &[u8]) -> [u8; 64] {
     // <const L: usize>
