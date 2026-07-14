@@ -278,7 +278,8 @@ theorem forLoopWithInvariant_spec {β : Type}
       body i acc
       ⦃ ⇓ r => ⌜ ∀ (i' : Usize), i'.val = i.val + 1 → (inv i' r).holds ⌝ ⦄) :
     ⦃ ⌜ True ⌝ ⦄
-    Hax.forLoopWithInvariant inv body { start := s, «end» := e } init
+    Hax.forLoopWithInvariant core.Usize.Insts.CoreIterRangeStep inv body
+      { start := s, «end» := e } init
     ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
   unfold Hax.forLoopWithInvariant
   apply loop_range_spec _ init s e inv h_le h_init

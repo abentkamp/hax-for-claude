@@ -18,19 +18,21 @@ namespace Hax
 
 /-- A `for i in s..e` loop carrying its invariant as a marker.
 
-The argument `body : Usize → β → Result β` takes the current index and accumulator
-and returns the new accumulator. The iterator and `ControlFlow` plumbing live entirely
-inside this definition. The first argument `_inv` is a marker read off by the
-`for_loop_with_invariant` tactic and by spec lemmas; it has no computational role. -/
-def forLoopWithInvariant {β : Type}
-    (_inv : Usize → β → Result Prop)
-    (body : Usize → β → Result β)
-    (iter : core.ops.range.Range Usize) (init : β) :
+Generic over the loop index type `ι` (any integer type with a `Step ι`
+instance — `usize`, `i32`, …). The argument `body : ι → β → Result β` takes the
+current index and accumulator and returns the new accumulator. The iterator and
+`ControlFlow` plumbing live entirely inside this definition. The argument `_inv`
+is a marker read off by the `for_loop_with_invariant` tactic and by spec lemmas;
+it has no computational role. -/
+def forLoopWithInvariant {ι β : Type} (StepInst : core.iter.range.Step ι)
+    (_inv : ι → β → Result Prop)
+    (body : ι → β → Result β)
+    (iter : core.ops.range.Range ι) (init : β) :
     Result β :=
-  loop (fun x : core.ops.range.Range Usize × β => do
+  loop (fun x : core.ops.range.Range ι × β => do
     let (o, r) ←
       core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next
-        core.Usize.Insts.CoreIterRangeStep x.1
+        StepInst x.1
     match o with
     | core.option.Option.None => Result.ok (ControlFlow.done x.2)
     | core.option.Option.Some i => do
@@ -104,9 +106,25 @@ private def buildForLoopWithInvariant
   let iter := initialPair.getArg! 2
   let init := initialPair.getArg! 3
   let elemTy ← inferType init
+  -- The loop index type `ι` is the type parameter of `iter : Range ι`.
+  let idxTy := (← whnfR (← inferType iter)).getArg! 0
   let loopBody := loopExpr.getArg! 2
-  let usize := mkConst ``Aeneas.Std.Usize
-  let stepLambda ← withLocalDeclD `j usize fun j =>
+  -- Extract the `Step ι` instance from the loop body's `next StepInst x.1`.
+  let stepInst ← do
+    let loopBody ← whnfR loopBody
+    unless loopBody.isLambda do
+      throwError "for_loop_with_invariant: loop body is not a lambda"
+    lambdaTelescope loopBody fun _ inner => do
+      let inner ← whnfR inner
+      unless inner.isAppOfArity ``Bind.bind 6 do
+        throwError "for_loop_with_invariant: loop body is not a `next >>= …` bind"
+      let nextApp := inner.getArg! 4
+      let args := nextApp.getAppArgs
+      unless args.size ≥ 2 do
+        throwError "for_loop_with_invariant: could not extract the `Step` instance"
+      -- `next {A} StepInst range` → the `Step` instance is the arg before `range`.
+      pure args[args.size - 2]!
+  let stepLambda ← withLocalDeclD `j idxTy fun j =>
     withLocalDeclD `a elemTy fun a => do
       let loopBody ← whnfR loopBody
       unless loopBody.isLambda do
@@ -121,16 +139,16 @@ private def buildForLoopWithInvariant
               step body (expected shape \
               `Bind.bind userBody (fun acc' => ok (cont (_, acc')))`)"
         mkLambdaFVars #[j, a] body
-  mkAppM ``Hax.forLoopWithInvariant #[inv, stepLambda, iter, init]
+  mkAppM ``Hax.forLoopWithInvariant #[stepInst, inv, stepLambda, iter, init]
 
 /-- Elaborate the user-supplied invariant against the expected type
-`Usize → β → Result Prop`, where `β` is the element type taken from `init`. -/
-private def elabInvariant (init : Expr) (invStx : Term) : TacticM Expr := do
+`ι → β → Result Prop`, where `ι` is the loop index type and `β` is the element
+type taken from `init`. -/
+private def elabInvariant (idxTy init : Expr) (invStx : Term) : TacticM Expr := do
   let elemTy ← inferType init
-  let usize := mkConst ``Aeneas.Std.Usize
   let resultProp ← mkAppM ``Aeneas.Std.Result #[mkSort .zero]
   let invType :=
-    Expr.forallE `i usize (Expr.forallE `r elemTy resultProp .default) .default
+    Expr.forallE `i idxTy (Expr.forallE `r elemTy resultProp .default) .default
   let inv ← Term.elabTermEnsuringType invStx invType
   Term.synthesizeSyntheticMVarsNoPostponing
   instantiateMVars inv
@@ -157,8 +175,10 @@ def elabForLoopWithInvariantConv : Tactic := fun stx => do
     unless initialPair.isAppOfArity ``Prod.mk 4 do
       throwError "for_loop_with_invariant: loop's initial argument is not \
         a literal pair `(iter, init)`"
+    let iter := initialPair.getArg! 2
     let init := initialPair.getArg! 3
-    let inv ← elabInvariant init invStx
+    let idxTy := (← whnfR (← inferType iter)).getArg! 0
+    let inv ← elabInvariant idxTy init invStx
     let newExpr ← buildForLoopWithInvariant lhs inv
     Conv.changeLhs newExpr
 
