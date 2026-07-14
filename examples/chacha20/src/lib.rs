@@ -10,6 +10,7 @@ type ChaChaKey = [u8; 32];
 
 type StateIdx = hax_bounded_integers::BoundedUsize<0, 15>;
 
+#[hax_lib::ensures(|_| true)]
 fn chacha20_line(a: StateIdx, b: StateIdx, d: StateIdx, s: u32, m: State) -> State {
     let mut state = m;
     state[a] = state[a].wrapping_add(state[b]);
@@ -18,6 +19,7 @@ fn chacha20_line(a: StateIdx, b: StateIdx, d: StateIdx, s: u32, m: State) -> Sta
     state
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_quarter_round(
     a: StateIdx,
     b: StateIdx,
@@ -33,6 +35,7 @@ pub fn chacha20_quarter_round(
 
 use hax_lib::*;
 
+#[hax_lib::ensures(|_| true)]
 fn chacha20_double_round(state: State) -> State {
     let state = chacha20_quarter_round(
         0.into_checked(),
@@ -93,6 +96,7 @@ fn chacha20_double_round(state: State) -> State {
     )
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_rounds(state: State) -> State {
     let mut st = state;
     for _i in 0..10 {
@@ -101,6 +105,7 @@ pub fn chacha20_rounds(state: State) -> State {
     st
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_core(ctr: u32, st0: State) -> State {
     let mut state = st0;
     state[12] = state[12].wrapping_add(ctr);
@@ -108,6 +113,7 @@ pub fn chacha20_core(ctr: u32, st0: State) -> State {
     add_state(state, k)
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_init(key: &ChaChaKey, iv: &ChaChaIV, ctr: u32) -> State {
     let key_u32: [u32; 8] = to_le_u32s_8(key);
     let iv_u32: [u32; 3] = to_le_u32s_3(iv);
@@ -131,16 +137,19 @@ pub fn chacha20_init(key: &ChaChaKey, iv: &ChaChaIV, ctr: u32) -> State {
     ]
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_key_block(state: State) -> Block {
     let state = chacha20_core(0u32, state);
     u32s_to_le_bytes(&state)
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_key_block0(key: &ChaChaKey, iv: &ChaChaIV) -> Block {
     let state = chacha20_init(key, iv, 0u32);
     chacha20_key_block(state)
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_encrypt_block(st0: State, ctr: u32, plain: &Block) -> Block {
     let st = chacha20_core(ctr, st0);
     let pl: State = to_le_u32s_16(plain);
@@ -149,6 +158,7 @@ pub fn chacha20_encrypt_block(st0: State, ctr: u32, plain: &Block) -> Block {
 }
 
 #[hax::requires(plain.len() <= 64)]
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_encrypt_last(st0: State, ctr: u32, plain: &[u8]) -> Vec<u8> {
     let mut b: Block = [0; 64];
     b = update_array(b, plain);
@@ -156,6 +166,7 @@ pub fn chacha20_encrypt_last(st0: State, ctr: u32, plain: &[u8]) -> Vec<u8> {
     b[0..plain.len()].to_vec()
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20_update(st0: State, m: &[u8]) -> Vec<u8> {
     let mut blocks_out = Vec::new();
     let num_blocks = m.len() / 64;
@@ -176,6 +187,7 @@ pub fn chacha20_update(st0: State, m: &[u8]) -> Vec<u8> {
     blocks_out
 }
 
+#[hax_lib::ensures(|_| true)]
 pub fn chacha20(m: &[u8], key: &ChaChaKey, iv: &ChaChaIV, ctr: u32) -> Vec<u8> {
     let state = chacha20_init(key, iv, ctr);
     chacha20_update(state, m)

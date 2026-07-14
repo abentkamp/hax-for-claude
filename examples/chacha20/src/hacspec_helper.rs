@@ -11,6 +11,7 @@ use super::State;
 
 macro_rules! to_le_u32s_impl {
     ($name:ident,$l:literal) => {
+        #[hax_lib::ensures(|_| true)]
         pub(super) fn $name(bytes: &[u8]) -> [u32; $l] {
             // assert_eq!($l, bytes.len() / 4);
             let mut out = [0; $l];
@@ -26,6 +27,7 @@ to_le_u32s_impl!(to_le_u32s_3, 3);
 to_le_u32s_impl!(to_le_u32s_8, 8);
 to_le_u32s_impl!(to_le_u32s_16, 16);
 
+#[hax_lib::ensures(|_| true)]
 pub(super) fn u32s_to_le_bytes(state: &[u32; 16]) -> [u8; 64] {
     // <const L: usize>
     let mut out = [0; 64];
@@ -38,6 +40,7 @@ pub(super) fn u32s_to_le_bytes(state: &[u32; 16]) -> [u8; 64] {
     out
 }
 
+#[hax_lib::ensures(|_| true)]
 pub(super) fn xor_state(mut state: State, other: State) -> State {
     for i in 0..16 {
         state[i] = state[i] ^ other[i];
@@ -45,6 +48,7 @@ pub(super) fn xor_state(mut state: State, other: State) -> State {
     state
 }
 
+#[hax_lib::ensures(|_| true)]
 pub(super) fn add_state(mut state: State, other: State) -> State {
     for i in 0..16 {
         state[i] = state[i].wrapping_add(other[i]);
@@ -52,6 +56,7 @@ pub(super) fn add_state(mut state: State, other: State) -> State {
     state
 }
 
+#[hax_lib::ensures(|_| true)]
 pub(super) fn update_array(mut array: [u8; 64], val: &[u8]) -> [u8; 64] {
     // <const L: usize>
     assert!(64 >= val.len());

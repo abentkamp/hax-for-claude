@@ -1,0 +1,10 @@
+name = "Chacha20"
+version = "0.1.0"
+defaultTargets = ["Chacha20"]
+
+[[lean_lib]]
+name = "Chacha20"
+
+[[require]]
+name = "Hax"
+path = "../../../../hax-lib/proof-libs/lean"
