@@ -155,4 +155,38 @@ theorem u32s_to_le_bytes_spec (state : Array Std.U32 16#usize) :
     | (intros; simp [Result.holds])
     | simp [Result.holds]
 
+/-- Loop of `update_array` over `0..e`: writes `array[i] := val[i]`. Panic-free
+when `e ≤ val.length` (source bound) and `val.length ≤ 64` (dest bound). -/
+@[spec]
+theorem update_array_loop_spec
+    (array : Array Std.U8 64#usize) (val : Slice Std.U8) (e : Std.Usize)
+    (hle : e.val ≤ val.length) (h64 : val.length ≤ 64) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.update_array_loop { start := 0#usize, «end» := e } array val
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.update_array_loop hacspec_helper.update_array_loop.body
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `update_array` is panic-free given `val.length ≤ 64`. -/
+@[spec]
+theorem update_array_spec
+    (array : Array Std.U8 64#usize) (val : Slice Std.U8) (hpre : val.length ≤ 64) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.update_array array val
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.update_array
+  simp only [core.slice.Slice.len]
+  hax_mvcgen
+  all_goals first
+    | (simp only [Slice.len]; scalar_tac)
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
 end chacha20
