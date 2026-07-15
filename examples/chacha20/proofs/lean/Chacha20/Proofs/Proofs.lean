@@ -382,4 +382,99 @@ theorem chacha20_encrypt_block_spec
     | (intros; simp [Result.holds])
     | simp [Result.holds]
 
+/-- `chacha20_encrypt_last` is panic-free given `0 < plain.length ≤ 64`:
+`update_array` (needs `≤ 64`), `chacha20_encrypt_block`, then `b[0..plain.len]`
+(needs `0 < plain.len ≤ 64`) collected into a `Vec`. -/
+@[spec]
+theorem chacha20_encrypt_last_spec
+    (st0 : Array Std.U32 16#usize) (ctr : Std.U32) (plain : Slice Std.U8)
+    (hlo : 0 < plain.length) (hhi : plain.length ≤ 64) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_encrypt_last st0 ctr plain
+    ⦃ ⇓ r => ⌜ Slice.length r ≤ plain.length ⌝ ⦄ := by
+  unfold chacha20_encrypt_last
+  simp only [core.Array.Insts.CoreOpsIndexIndex.index, core.array.Array.as_slice,
+    rust_primitives.slice.array_as_slice, alloc.slice.Slice.to_vec,
+    CoreModels.alloc.slice.Dummy.to_vec, core.slice.Slice.len,
+    rust_primitives.sequence.seq_empty, rust_primitives.sequence.seq_extend]
+  hax_mvcgen
+  all_goals first
+    | (apply absurd _ ‹_›
+       simp only [Slice.new, List.nil_append, List.length_append, List.length_nil]
+       scalar_tac)
+    | (simp only [Slice.new, List.nil_append, List.length_append, List.length_nil,
+         Slice.len, Slice.length]
+       scalar_tac)
+    | (simp only [Slice.len, Array.length_to_slice, Array.length_repeat]; scalar_tac)
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Loop of `chacha20_update` over `0..e` with `64*e ≤ m.length`. Each iteration
+appends a 64-byte encrypted block to `blocks_out`; the invariant
+`blocks_out.length ≤ i*64` keeps the `Vec` within `Usize.max`. -/
+@[spec]
+theorem chacha20_update_loop_spec
+    (st0 : Array Std.U32 16#usize) (m : Slice Std.U8) (e : Std.Usize)
+    (blocks_out : alloc.vec.Vec Std.U8)
+    (hnb : 64 * e.val ≤ m.length) (hinit : blocks_out.length = 0) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_update_loop { start := 0#usize, «end» := e } st0 m blocks_out
+    ⦃ ⇓ r => ⌜ Slice.length r ≤ e.val * 64 ⌝ ⦄ := by
+  unfold chacha20_update_loop chacha20_update_loop.body
+  simp only [alloc.vec.Vec.len, rust_primitives.sequence.seq_len,
+    alloc.vec.Vec.extend_from_slice, rust_primitives.sequence.seq_extend,
+    hax_lib.prop.Prop.Insts.CoreConvertFromBool.from, hax_lib.assume]
+  for_loop_with_invariant fun (i : Std.Usize) (bo : alloc.vec.Vec Std.U8) =>
+    pure (bo.length ≤ i.val * 64)
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intro h; exact h)                                    -- vc8: `∃..` → `∃..`
+    | (intro h; scalar_tac)                                 -- vc9/10/11: bound side-conditions
+    | (intro i' hi'                                          -- vc6: invariant preservation
+       simp [Result.holds, Triple, WP.wp, PredTrans.apply, List.length_append,
+         Array.length_to_slice, Slice.length] at * <;> scalar_tac)
+    | (simp [Result.holds, Triple, WP.wp, PredTrans.apply, List.length_append,
+         Array.length_to_slice, Slice.length] at * <;> scalar_tac)  -- vc7
+
+/-- `chacha20_update` is panic-free: `num_blocks = m.len/64` full blocks (the loop),
+then a partial last block when `m.len % 64 ≠ 0`. The `Vec` stays within `Usize.max`
+because the accumulated length never exceeds `m.len`. -/
+@[spec]
+theorem chacha20_update_spec (st0 : Array Std.U32 16#usize) (m : Slice Std.U8) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_update st0 m
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_update
+  simp only [alloc.vec.Vec.new, rust_primitives.sequence.seq_empty,
+    core.slice.Slice.len, alloc.vec.Vec.len, rust_primitives.sequence.seq_len,
+    hax_lib.prop.Prop.Insts.CoreConvertFromBool.from, hax_lib.assume,
+    alloc.vec.Vec.Insts.CoreOpsDerefDerefSlice.deref, alloc.vec.Vec.as_slice,
+    rust_primitives.sequence.seq_to_slice,
+    alloc.vec.Vec.extend_from_slice, rust_primitives.sequence.seq_extend]
+  hax_mvcgen
+  all_goals (try simp only [bne_iff_ne, ne_eq] at *)
+  all_goals first
+    | scalar_tac
+    | (intro h; scalar_tac)
+    | (simp [Result.holds, Triple, WP.wp, PredTrans.apply, List.length_append,
+        Array.length_to_slice, Slice.length] at * <;> scalar_tac)
+
+/-- `chacha20` is panic-free: `chacha20_init` then `chacha20_update`. -/
+@[spec]
+theorem chacha20_spec
+    (m : Slice Std.U8) (key : Array Std.U8 32#usize) (iv : Array Std.U8 12#usize)
+    (ctr : Std.U32) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20 m key iv ctr
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
 end chacha20
