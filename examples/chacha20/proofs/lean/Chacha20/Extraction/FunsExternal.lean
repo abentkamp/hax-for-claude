@@ -326,22 +326,147 @@ theorem forLoopWithInvariant_spec {β : Type}
 /-! ## i32 range loop spec
 
 `forLoopWithInvariant_spec` above is proven for `usize` ranges; `chacha20_rounds`
-uses a `for _i in 0..10` loop over `i32`. The statement below is the exact `i32`
-analogue (same shape, `core.I32.Insts.CoreIterRangeStep`, plus `e.val ≤ I32.max`
-so successive `+1` steps do not overflow).
+uses a `for _i in 0..10` loop over `i32`. The three lemmas below are the `i32`
+analogues (`IteratorRange_next_spec_i32` → `loop_range_spec_i32` →
+`forLoopWithInvariant_spec_i32`), with the extra hypotheses `0 ≤ i.val` and
+`e.val < I32.max` so successive `+1` steps do not overflow.
 
-Its proof mirrors the `usize` triple (`IteratorRange_next_spec` → `loop_range_spec`
-→ `forLoopWithInvariant_spec`) with signed arithmetic: the `i32` `forward_checked`
-routes through `try_from : usize → u32`, an `hcast` to `i32`, a `wrapping_add`, and
-a `≥` check. It is deferred (`sorry`) here — clearly true, being the exact analogue
-of the proven `usize` version — and belongs in the Hax library alongside the
-`usize` one. -/
+The signed `i32` `forward_checked` routes through `try_from : usize → u32`, an
+`hcast` to `i32`, a `wrapping_add`, and a `≥` check; the arithmetic is discharged
+in `IteratorRange_next_spec_i32`. These belong in the Hax library alongside the
+`usize` versions. -/
+/-- `i32` `Iterator::next` for a range `[i, e)`. Mirrors `IteratorRange_next_spec`
+but for signed `i32`: needs `0 ≤ i.val` and `i.val + 1 ≤ I32.max` so the `+1` step
+does not overflow. -/
+@[spec]
+theorem IteratorRange_next_spec_i32 (i e : I32) {Q}
+    (hlo : 0 ≤ i.val) (hmax : i.val + 1 ≤ I32.max)
+    (h_lt : (h : i.val < e.val) →
+      ∀ (s : I32), s.val = i.val + 1 →
+        (Q.1 (some i, { start := s, «end» := e })).down)
+    (h_ge : i.val ≥ e.val →
+      (Q.1 (none, { start := i, «end» := e })).down) :
+    ⦃ ⌜ True ⌝ ⦄
+    core.IteratorRange.next core.I32.Insts.CoreIterRangeStep
+      { start := i, «end» := e }
+    ⦃ Q ⦄ := by
+  have hb : (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize)).val = 1 := by
+    have h1 : UScalar.cast UScalarTy.U32 (1#usize) = 1#u32 := by
+      apply UScalar.eq_of_val_eq; simp
+    rw [h1]; simp only [UScalar.hcast, IScalar.val]; decide
+  have hmax' : i.val + 1 ≤ 2147483647 := by scalar_tac
+  have hwval :
+      (i.wrapping_add (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize))).val
+        = i.val + 1 := by
+    simp only [I32.wrapping_add_val_eq, hb]
+    unfold Int.bmod
+    rw [Int.emod_eq_of_lt (by omega) (by omega)]
+    norm_num; omega
+  unfold core.IteratorRange.next core.I32.Insts.CoreIterRangeStep
+  by_cases h : i.val < e.val
+  · have h_lt' := h_lt h
+    simp_all [compare, compareOfLessAndEq,
+      core.I32.Insts.CoreCmpPartialOrdI32, core.mkIPartialOrd,
+      core.I32.Insts.CoreCloneClone.clone]
+    simp only [core.I32.Insts.CoreIterRangeStep.forward_checked,
+      CoreModels.core.num.I32.wrapping_add, rust_primitives.arithmetic.wrapping_add_i32,
+      core.U32.Insts.CoreConvertTryFromUsizeTryFromIntError.try_from]
+    mvcgen
+    all_goals subst_vars
+    all_goals first
+      | (apply h_lt'                                     -- vc3: success
+         simp only [I32.wrapping_add_val_eq, hb]; exact hwval)
+      | (exfalso                                         -- vc1: `1 > cast u32.MAX` is false
+         have : (UScalar.cast UScalarTy.Usize core.num.U32.MAX).val = 4294967295 := by
+           simp [core.num.U32.MAX, U32.rMax]
+         scalar_tac)
+      | (exfalso                                         -- vc2: `1 < cast u32.MIN` is false
+         have : (UScalar.cast UScalarTy.Usize core.num.U32.MIN).val = 0 := by
+           simp [core.num.U32.MIN]
+         scalar_tac)
+      | (exfalso                                         -- vc4: `¬ i+1 ≥ i` is false
+         have hv :
+             (i.wrapping_add (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize))).val
+               = i.val + 1 := by
+           simp only [I32.wrapping_add_val_eq, hb]; exact hwval
+         exact absurd
+           (show i.wrapping_add (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize)) ≥ i
+             by scalar_tac) ‹_›)
+  · have hle := not_lt.mp h
+    have h_ge' := h_ge hle
+    simp_all [compare, compareOfLessAndEq,
+      core.I32.Insts.CoreCmpPartialOrdI32, core.mkIPartialOrd]
+    mvcgen
+    all_goals first
+      | exact h_ge'
+      | (rename_i hlt
+         split at hlt <;> rename_i heq <;> split at heq <;>
+           (try simp_all); (rename_i heq2; split at heq2 <;> cases heq2))
+
+set_option maxHeartbeats 2000000 in
+theorem loop_range_spec_i32 {β : Type}
+    (body : (core.ops.range.Range I32 × β) →
+      Result (ControlFlow (core.ops.range.Range I32 × β) β))
+    (init : β) (s e : I32) (inv : I32 → β → Result Prop)
+    (h_le : s.val ≤ e.val)
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : I32), s.val ≤ i.val → i.val ≤ e.val →
+      (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄
+      body ({ start := i, «end» := e }, acc)
+      ⦃ ⇓ r => match r with
+        | .cont (iter', acc') =>
+          ⌜ i.val < e.val ∧ iter'.«end» = e ∧ iter'.start.val = i.val + 1
+            ∧ (inv iter'.start acc').holds ⌝
+        | .done y => ⌜ (inv e y).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    loop body ({ start := s, «end» := e }, init)
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  suffices gen : ∀ (n : Nat) (acc : β) (start : I32),
+    (e.val - start.val).toNat = n →
+    s.val ≤ start.val → start.val ≤ e.val →
+    (inv start acc).holds →
+    ⦃ ⌜ True ⌝ ⦄ loop body ({ start := start, «end» := e }, acc)
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ by
+    exact gen _ init s rfl (le_refl _) h_le h_init
+  intro n
+  induction n with
+  | zero =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := triple_noThrow_exists_ok hs
+    have hpost := triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody]
+    match r with
+    | .cont (iter', acc') =>
+      simp at hpost; exact absurd hpost.1 (by omega)
+    | .done y =>
+      simp at hpost; exact triple_of_ok rfl hpost
+  | succ n ih =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := triple_noThrow_exists_ok hs
+    have hpost := triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody]
+    match r with
+    | .done y =>
+      simp at hpost; exact triple_of_ok rfl hpost
+    | .cont (iter', acc') =>
+      simp at hpost
+      obtain ⟨hlt, hend, hstart, hinv'⟩ := hpost
+      have hiter : iter' = { start := iter'.start, «end» := e } := by
+        cases iter'; cases hend; rfl
+      rw [hiter]
+      exact ih acc' iter'.start
+        (by rw [hstart]; omega) (by rw [hstart]; omega) (by rw [hstart]; omega) hinv'
+
 @[spec]
 theorem forLoopWithInvariant_spec_i32 {β : Type}
     (body : I32 → β → Result β)
     (init : β) (s e : I32) (inv : I32 → β → Result Prop)
     (h_le : s.val ≤ e.val)
-    (h_max : e.val ≤ I32.max)
+    (h_nonneg : 0 ≤ s.val)
+    (h_max : e.val < I32.max)
     (h_init : (inv s init).holds)
     (h_step : ∀ acc (i : I32), s.val ≤ i.val → i.val < e.val →
       (inv i acc).holds →
@@ -352,5 +477,26 @@ theorem forLoopWithInvariant_spec_i32 {β : Type}
     Hax.forLoopWithInvariant core.I32.Insts.CoreIterRangeStep inv body
       { start := s, «end» := e } init
     ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
-  sorry
+  unfold Hax.forLoopWithInvariant
+  apply loop_range_spec_i32 _ init s e inv h_le h_init
+  intro acc i hsi hie hinv
+  have hi_nonneg : 0 ≤ i.val := le_trans h_nonneg hsi
+  have hi_max : i.val + 1 ≤ I32.max := by omega
+  simp only [core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next]
+  mvcgen [IteratorRange_next_spec_i32]
+  · -- i < e: run the user body, then the loop continues with the advanced index
+    rename_i hlt s' hs'
+    have hbody := h_step acc i hsi hlt hinv
+    obtain ⟨r, hr⟩ := triple_noThrow_exists_ok hbody
+    have hp := triple_noThrow_elim hbody hr
+    have hh := hp s' hs'
+    simp [hr, bind_tc_ok, Triple, WP.wp, Result.holds, PredTrans.apply] at hh ⊢
+    refine ⟨hlt, hs', ?_⟩
+    rcases hires : inv s' r with _ | _ | _ <;> simp [hires] at hh ⊢ <;> exact hh
+  · -- i ≥ e: with `i ≤ e` this forces `i = e`; the loop is done and `inv e` holds
+    rename_i hge
+    have hval : i.val = e.val := le_antisymm hie hge
+    have hie' : i = e := IScalar.eq_imp _ _ hval
+    simp only [Triple, WP.wp, Result.holds, PredTrans.apply]
+    rw [← hie']; exact hinv
 
