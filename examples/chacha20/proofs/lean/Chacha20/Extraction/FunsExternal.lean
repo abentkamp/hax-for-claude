@@ -323,3 +323,34 @@ theorem forLoopWithInvariant_spec {β : Type}
           Triple, WP.wp, Result.holds] at hh ⊢
     exact hh
 
+/-! ## i32 range loop spec
+
+`forLoopWithInvariant_spec` above is proven for `usize` ranges; `chacha20_rounds`
+uses a `for _i in 0..10` loop over `i32`. The statement below is the exact `i32`
+analogue (same shape, `core.I32.Insts.CoreIterRangeStep`, plus `e.val ≤ I32.max`
+so successive `+1` steps do not overflow).
+
+Its proof mirrors the `usize` triple (`IteratorRange_next_spec` → `loop_range_spec`
+→ `forLoopWithInvariant_spec`) with signed arithmetic: the `i32` `forward_checked`
+routes through `try_from : usize → u32`, an `hcast` to `i32`, a `wrapping_add`, and
+a `≥` check. It is deferred (`sorry`) here — clearly true, being the exact analogue
+of the proven `usize` version — and belongs in the Hax library alongside the
+`usize` one. -/
+@[spec]
+theorem forLoopWithInvariant_spec_i32 {β : Type}
+    (body : I32 → β → Result β)
+    (init : β) (s e : I32) (inv : I32 → β → Result Prop)
+    (h_le : s.val ≤ e.val)
+    (h_max : e.val ≤ I32.max)
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : I32), s.val ≤ i.val → i.val < e.val →
+      (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄
+      body i acc
+      ⦃ ⇓ r => ⌜ ∀ (i' : I32), i'.val = i.val + 1 → (inv i' r).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    Hax.forLoopWithInvariant core.I32.Insts.CoreIterRangeStep inv body
+      { start := s, «end» := e } init
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  sorry
+

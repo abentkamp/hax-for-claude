@@ -1,5 +1,6 @@
 import Chacha20.Extraction.Funs
 import Chacha20.Extraction.Specs
+import Chacha20.Proofs.Missing
 import Hax
 open CoreModels Aeneas
 open Aeneas.Std hiding namespace core alloc
@@ -185,6 +186,198 @@ theorem update_array_spec
   hax_mvcgen
   all_goals first
     | (simp only [Slice.len]; scalar_tac)
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Loop of `to_le_u32s_3` over `0..e` with `e ≤ 3` and `4*3 ≤ bytes.length`:
+each iteration reads `bytes[4i .. 4i+4]` (in range) and writes `out[i]`
+(`i < 3`). Panic-free. -/
+@[spec]
+theorem to_le_u32s_3_loop_spec
+    (bytes : Slice Std.U8) (out : Array Std.U32 3#usize) (e : Std.Usize)
+    (he : e.val ≤ 3) (hb : 12 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_3_loop { start := 0#usize, «end» := e } bytes out
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_3_loop hacspec_helper.to_le_u32s_3_loop.body
+  simp only [core.num.U32.from_le_bytes, rust_primitives.arithmetic.from_le_bytes_u32]
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | assumption
+    | (intro h; first | exact h | scalar_tac | simp_all [Result.holds])
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `to_le_u32s_3` is panic-free given `12 ≤ bytes.length` (its `bytes.len() >= 4*3`
+precondition). -/
+@[spec]
+theorem to_le_u32s_3_spec (bytes : Slice Std.U8) (hb : 12 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_3 bytes
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_3
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Loop of `to_le_u32s_8` over `0..e` with `e ≤ 8` and `4*8 ≤ bytes.length`. -/
+@[spec]
+theorem to_le_u32s_8_loop_spec
+    (bytes : Slice Std.U8) (out : Array Std.U32 8#usize) (e : Std.Usize)
+    (he : e.val ≤ 8) (hb : 32 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_8_loop { start := 0#usize, «end» := e } bytes out
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_8_loop hacspec_helper.to_le_u32s_8_loop.body
+  simp only [core.num.U32.from_le_bytes, rust_primitives.arithmetic.from_le_bytes_u32]
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | assumption
+    | (intro h; first | exact h | scalar_tac | simp_all [Result.holds])
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `to_le_u32s_8` is panic-free given `32 ≤ bytes.length`. -/
+@[spec]
+theorem to_le_u32s_8_spec (bytes : Slice Std.U8) (hb : 32 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_8 bytes
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_8
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- Loop of `to_le_u32s_16` over `0..e` with `e ≤ 16` and `4*16 ≤ bytes.length`. -/
+@[spec]
+theorem to_le_u32s_16_loop_spec
+    (bytes : Slice Std.U8) (out : Array Std.U32 16#usize) (e : Std.Usize)
+    (he : e.val ≤ 16) (hb : 64 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_16_loop { start := 0#usize, «end» := e } bytes out
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_16_loop hacspec_helper.to_le_u32s_16_loop.body
+  simp only [core.num.U32.from_le_bytes, rust_primitives.arithmetic.from_le_bytes_u32]
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | assumption
+    | (intro h; first | exact h | scalar_tac | simp_all [Result.holds])
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `to_le_u32s_16` is panic-free given `64 ≤ bytes.length`. -/
+@[spec]
+theorem to_le_u32s_16_spec (bytes : Slice Std.U8) (hb : 64 ≤ bytes.length) :
+    ⦃ ⌜ True ⌝ ⦄
+    hacspec_helper.to_le_u32s_16 bytes
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold hacspec_helper.to_le_u32s_16
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_init` is panic-free: `to_le_u32s_8`/`to_le_u32s_3` on the length-32
+key / length-12 iv, then in-range reads (`< 8` / `< 3`) into a length-16 state. -/
+@[spec]
+theorem chacha20_init_spec
+    (key : Array Std.U8 32#usize) (iv : Array Std.U8 12#usize) (ctr : Std.U32) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_init key iv ctr
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_init
+  hax_mvcgen
+  all_goals first
+    | (simp only [Slice.len, Array.length_to_slice]; scalar_tac)
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_rounds` is panic-free: 10 iterations of the panic-free
+`chacha20_double_round` over an `i32` range `0..10`. -/
+@[spec]
+theorem chacha20_rounds_spec (state : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_rounds state
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_rounds chacha20_rounds_loop chacha20_rounds_loop.body
+  for_loop_with_invariant fun _ _ => pure True
+  mstart
+  mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_core` is panic-free: in-range read/write at index 12 of the
+length-16 state, then `chacha20_rounds` and `add_state`. -/
+@[spec]
+theorem chacha20_core_spec (ctr : Std.U32) (st0 : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_core ctr st0
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_core
+  simp only [core.num.U32.wrapping_add, rust_primitives.arithmetic.wrapping_add_u32]
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_key_block` is panic-free: `chacha20_core` then `u32s_to_le_bytes`. -/
+@[spec]
+theorem chacha20_key_block_spec (state : Array Std.U32 16#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_key_block state
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_key_block
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_key_block0` is panic-free: `chacha20_init` then `chacha20_key_block`. -/
+@[spec]
+theorem chacha20_key_block0_spec
+    (key : Array Std.U8 32#usize) (iv : Array Std.U8 12#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_key_block0 key iv
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_key_block0
+  hax_mvcgen
+  all_goals first
+    | scalar_tac
+    | (intros; simp [Result.holds])
+    | simp [Result.holds]
+
+/-- `chacha20_encrypt_block` is panic-free: `chacha20_core`, `to_le_u32s_16` on the
+length-64 block, `xor_state`, `u32s_to_le_bytes`. -/
+@[spec]
+theorem chacha20_encrypt_block_spec
+    (st0 : Array Std.U32 16#usize) (ctr : Std.U32) (plain : Array Std.U8 64#usize) :
+    ⦃ ⌜ True ⌝ ⦄
+    chacha20_encrypt_block st0 ctr plain
+    ⦃ ⇓ _ => ⌜ True ⌝ ⦄ := by
+  unfold chacha20_encrypt_block
+  hax_mvcgen
+  all_goals first
+    | (simp only [Slice.len, Array.length_to_slice]; scalar_tac)
     | scalar_tac
     | (intros; simp [Result.holds])
     | simp [Result.holds]
