@@ -1,6 +1,6 @@
 .PHONY: default clean
 default:
-	cargo hax into aeneas-lean --aeneas-args="-core-models-lib"
+	cargo hax into aeneas-lean
 	sed -i \
 		'/^open Aeneas /c\open core_models Aeneas\nopen Aeneas.Std hiding namespace core alloc\nopen Result ControlFlow Error' \
 		proofs/aeneas-lean/LoopEquivalence/Extraction/Funs.lean
