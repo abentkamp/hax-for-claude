@@ -2,9 +2,9 @@
 --
 -- These mirror the specs on the `specs` branch of `cryspen/rust-core-models`
 -- (lean/CoreModels/Spec/Core/{Array,Convert}.lean). The slice→`[T; N]`
--- `try_from` is modelled via `rust_primitives.slice.array_from_fn`; proving its
--- spec requires the `array_from_fn` spec. That proof is deferred here (`sorry`)
--- and will be provided once these live in the Hax library.
+-- `try_from` is modelled via `rust_primitives.slice.array_from_fn`; its spec is
+-- proved here (`array_from_fn` succeeds because every element read is in range,
+-- shown by induction on the `foldlM` over `range N`).
 import Aeneas
 import CoreModels
 import Chacha20.Extraction.Funs
@@ -18,13 +18,51 @@ set_option maxHeartbeats 1000000
 
 namespace CoreModels
 
-/-- The slice→`[T; N]` `try_from` (modelled via `array_from_fn`) succeeds,
-returning `Ok`, whenever the slice has length `N`.
+/-- `array_from_fn`'s `foldlM` over `range` succeeds: every step indexes the
+(unchanged) slice `x` at an in-range position, so it never fails. -/
+private theorem foldlM_index_ok {T : Type} (x : Slice T) (hx : x.val.length ≤ Usize.max) :
+    ∀ (l : List Nat) (acc : List T × Slice T), acc.2 = x → (∀ i ∈ l, i < x.val.length) →
+      ∃ res : List T × Slice T,
+        l.foldlM (fun (s : List T × Slice T) (i : Nat) => do
+          let d ← (do let t ← Slice.index_usize s.2 ⟨BitVec.ofNat _ i⟩; Result.ok (t, s.2))
+          Result.ok (s.1 ++ [d.1], d.2)) acc = Result.ok res ∧ res.2 = x := by
+  intro l
+  induction l with
+  | nil => exact fun acc h _ => ⟨acc, rfl, h⟩
+  | cons i l ih =>
+    intro acc hacc hall
+    have hi : i < x.val.length := hall i (by simp)
+    have hidx : (⟨BitVec.ofNat _ i⟩ : Usize).val = i := by
+      simp only [UScalar.val, BitVec.toNat_ofNat]; apply Nat.mod_eq_of_lt; scalar_tac
+    have hlt : (⟨BitVec.ofNat _ i⟩ : Usize).val < acc.2.val.length := by rw [hacc, hidx]; exact hi
+    obtain ⟨t, ht⟩ : ∃ t, Slice.index_usize acc.2 ⟨BitVec.ofNat _ i⟩ = Result.ok t := by
+      simp only [Slice.index_usize, Std.Slice.getElem?_Usize_eq]
+      rw [List.getElem?_eq_getElem hlt]; exact ⟨_, rfl⟩
+    simp only [List.foldlM_cons, ht, bind_tc_ok]
+    exact ih (acc.1 ++ [t], acc.2) hacc (fun j hj => hall j (by simp [hj]))
 
-Deferred (`sorry`): the corresponding proved spec on the `rust-core-models`
-`specs` branch phrases the result as `Ok (Std.Array.make N s.val _)`, which needs
-the `array_from_fn` spec; the existential form below is all we need for
-panic-freedom. -/
+/-- The slice→`[T; N]` `try_from` (modelled via `array_from_fn`) succeeds (returns
+`Ok`) whenever the slice has length `N`: every element read is in range. -/
+private theorem array_from_fn_ok {T : Type} (N : Std.Usize) (cpy : core.marker.Copy T)
+    (s : Slice T) (hlen : s.val.length = N.val) :
+    ∃ a, rust_primitives.slice.array_from_fn N
+      (core.convert.TryFromArrayShared0SliceTryFromSliceError.try_from.closure.Insts.CoreOpsFunctionFnMutTupleUsizeT
+        N cpy) s = Result.ok a := by
+  have hx : s.val.length ≤ Usize.max := by scalar_tac
+  obtain ⟨res, hres, -⟩ := foldlM_index_ok s hx (List.range N.val) ([], s) rfl
+    (fun i hi => by rw [List.mem_range] at hi; omega)
+  unfold rust_primitives.slice.array_from_fn
+  simp only
+    [core.convert.TryFromArrayShared0SliceTryFromSliceError.try_from.closure.Insts.CoreOpsFunctionFnMutTupleUsizeT,
+     core.convert.TryFromArrayShared0SliceTryFromSliceError.try_from.closure.Insts.CoreOpsFunctionFnMutTupleUsizeT.call_mut,
+     rust_primitives.slice.slice_index]
+  split
+  · rename_i e heq; rw [hres] at heq; exact absurd heq (by simp)
+  · rename_i heq; rw [hres] at heq; exact absurd heq (by simp)
+  · exact ⟨_, rfl⟩
+
+/-- The slice→`[T; N]` `try_from` (modelled via `array_from_fn`) succeeds,
+returning `Ok`, whenever the slice has length `N`. -/
 @[spec]
 theorem core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from_spec
     {T : Type} {N : Std.Usize} (cpy : core.marker.Copy T) (s : Slice T)
@@ -32,7 +70,14 @@ theorem core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_fro
     ⦃ ⌜ True ⌝ ⦄
     core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from N cpy s
     ⦃ ⇓ r => ⌜ ∃ a, r = core.result.Result.Ok a ⌝ ⦄ := by
-  sorry
+  obtain ⟨a, ha⟩ := array_from_fn_ok N cpy s hlen
+  have hN : (⟨BitVec.ofNat _ s.val.length⟩ : Usize) = N := by
+    apply UScalar.eq_of_val_eq
+    simp only [UScalar.val, BitVec.toNat_ofNat]
+    rw [Nat.mod_eq_of_lt (by scalar_tac)]; exact hlen
+  unfold core.Array.Insts.CoreConvertTryFromShared0SliceTryFromSliceError.try_from
+  simp only [core.slice.Slice.len, rust_primitives.sequence.seq_len, Slice.len]
+  mvcgen [ha, hN] <;> simp_all [Slice.length]
 
 /-- Indexing a slice by a `Range<usize>` (`s[start..end]`): panic-free when
 `start ≤ end ≤ s.length`, and the result has length `end - start`. -/
