@@ -3749,7 +3749,7 @@ def iter.adapters.flat_map.FlatMap.new
   ok { it, f, current := option.Option.None }
 
 /-- [core_models::iter::adapters::flat_map::{impl core_models::iter::traits::iterator::Iterator<Clause1_Item> for core_models::iter::adapters::flat_map::FlatMap<I, U, F>}::next]: loop body 0:
-    Source: 'core-models/src/core/iter.rs', lines 542:20-551:21
+    Source: 'core-models/src/core/iter.rs', lines 542:20-553:13
     Visibility: public -/
 @[rust_loop_body]
 def
@@ -3787,7 +3787,7 @@ def
       ok (done (option.Option.None, t, self.f, option.Option.None))
 
 /-- [core_models::iter::adapters::flat_map::{impl core_models::iter::traits::iterator::Iterator<Clause1_Item> for core_models::iter::adapters::flat_map::FlatMap<I, U, F>}::next]: loop 0:
-    Source: 'core-models/src/core/iter.rs', lines 542:20-551:21
+    Source: 'core-models/src/core/iter.rs', lines 542:20-553:13
     Visibility: public -/
 @[rust_loop]
 def
@@ -3854,7 +3854,7 @@ def iter.adapters.flatten.Flatten.new
   ok { it, current := option.Option.None }
 
 /-- [core_models::iter::adapters::flatten::{impl core_models::iter::traits::iterator::Iterator<Clause1_Item> for core_models::iter::adapters::flatten::Flatten<I, Clause0_Item, Clause1_Item>}::next]: loop body 0:
-    Source: 'core-models/src/core/iter.rs', lines 587:20-596:21
+    Source: 'core-models/src/core/iter.rs', lines 587:20-598:13
     Visibility: public -/
 @[rust_loop_body]
 def
@@ -3888,7 +3888,7 @@ def
       ok (done (option.Option.None, t, option.Option.None))
 
 /-- [core_models::iter::adapters::flatten::{impl core_models::iter::traits::iterator::Iterator<Clause1_Item> for core_models::iter::adapters::flatten::Flatten<I, Clause0_Item, Clause1_Item>}::next]: loop 0:
-    Source: 'core-models/src/core/iter.rs', lines 587:20-596:21
+    Source: 'core-models/src/core/iter.rs', lines 587:20-598:13
     Visibility: public -/
 @[rust_loop]
 def
@@ -4110,6 +4110,7 @@ def option.Option.expect
 /-- [core_models::iter::range::Step::forward]:
     Source: 'core-models/src/core/iter.rs', lines 736:8-738:9
     Visibility: public -/
+@[trait_default]
 def iter.range.Step.forward.default
   {Self : Type} (StepInst : iter.range.Step Self) (start : Self)
   (count : Std.Usize) :
@@ -4121,6 +4122,7 @@ def iter.range.Step.forward.default
 /-- [core_models::iter::range::Step::forward_unchecked]:
     Source: 'core-models/src/core/iter.rs', lines 740:8-742:9
     Visibility: public -/
+@[trait_default]
 def iter.range.Step.forward_unchecked.default
   {Self : Type} (StepInst : iter.range.Step Self) (start : Self)
   (count : Std.Usize) :
@@ -4131,6 +4133,7 @@ def iter.range.Step.forward_unchecked.default
 /-- [core_models::iter::range::Step::backward]:
     Source: 'core-models/src/core/iter.rs', lines 744:8-746:9
     Visibility: public -/
+@[trait_default]
 def iter.range.Step.backward.default
   {Self : Type} (StepInst : iter.range.Step Self) (start : Self)
   (count : Std.Usize) :
@@ -4142,6 +4145,7 @@ def iter.range.Step.backward.default
 /-- [core_models::iter::range::Step::backward_unchecked]:
     Source: 'core-models/src/core/iter.rs', lines 748:8-750:9
     Visibility: public -/
+@[trait_default]
 def iter.range.Step.backward_unchecked.default
   {Self : Type} (StepInst : iter.range.Step Self) (start : Self)
   (count : Std.Usize) :

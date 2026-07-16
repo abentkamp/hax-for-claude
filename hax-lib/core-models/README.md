@@ -73,8 +73,7 @@ across machines.
 ├── tools/                 # auxiliary tooling
 │   └── core-coverage/     #   generates COVERAGE.md (rustdoc-JSON based)
 ├── COVERAGE.md            # per-module core/alloc coverage report (generated)
-├── Makefile               # extraction + build orchestration
-└── .github/workflows/ci.yml
+└── Makefile               # extraction + build orchestration
 ```
 
 The distributed Lean library lives outside this crate at
