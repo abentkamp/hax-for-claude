@@ -3,10 +3,14 @@ import CoreModels
 
 /-! # `for_loop_with_invariant`
 
-This file implements a tactic `for_loop_with_invariant` allows us to replace occurrences of
-Aeneas's `loop` constant with a simpler construct `forLoopWithInvariant`, provided that
-the original Rust loops is a for-loop. For now, we only support for-loops over `usize`
-without early returns. -/
+This file implements a tactic `for_loop_with_invariant` that replaces occurrences of
+Aeneas's `loop` constant with a simpler construct `forLoopWithInvariant`, provided the
+original Rust loop is a for-loop over an integer range without early returns. It also
+provides the spec lemmas (`loop_range_spec`, `iteratorRange_next_spec`,
+`forLoopWithInvariant_spec`) that let `hax_mvcgen` discharge such loops. Everything is
+generic over the index type via a measure `v : A → ℤ`, so it works for every integer
+type; `@[spec]` instances are provided for `usize` and `i32` (other widths follow the
+same two templates). -/
 
 set_option autoImplicit false
 set_option linter.unusedVariables false
@@ -250,6 +254,67 @@ theorem forLoopWithInvariant_spec_usize {β : Type}
     obtain ⟨res, overflowed⟩ := ov
     subst hovf
     exact ⟨_, rfl, by exact_mod_cast hsv⟩
+
+/-- Balanced `bmod` is the identity on the 32-bit signed range. -/
+private theorem i32_bmod_id (n : ℤ) (hlo : -2147483648 ≤ n) (hhi : n < 2147483648) :
+    n.bmod 4294967296 = n := by
+  rw [Int.bmod]
+  show (if n % 4294967296 < (4294967296 + 1) / 2 then n % 4294967296
+    else n % 4294967296 - 4294967296) = n
+  split <;> omega
+
+/-- `for i in s..e` over `i32`. -/
+@[spec]
+theorem forLoopWithInvariant_spec_i32 {β : Type}
+    (body : Std.I32 → β → Result β) (init : β) (s e : Std.I32)
+    (inv : Std.I32 → β → Result Prop)
+    (h_le : s.val ≤ e.val)
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : Std.I32), s.val ≤ i.val → i.val < e.val → (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄ body i acc
+      ⦃ ⇓ r => ⌜ ∀ i', i'.val = i.val + 1 → (inv i' r).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    forLoopWithInvariant core.I32.Insts.CoreIterRangeStep inv body
+      { start := s, «end» := e } init
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  refine forLoopWithInvariant_spec (fun x => x.val) core.I32.Insts.CoreIterRangeStep
+    body init s e inv h_le ?_ ?_ ?_ ?_ h_init h_step
+  · -- injectivity
+    intro x y hxy; simp only [] at hxy; exact IScalar.eq_of_val_eq hxy
+  · -- clone
+    intro i; rfl
+  · -- partial_cmp
+    intro x y
+    show core.mkIPartialOrd.partial_cmp x y = _
+    simp only [core.mkIPartialOrd, compare, compareOfLessAndEq]
+    split_ifs <;> rfl
+  · -- forward_checked by 1: `wrapping_add` then a `≥` check; no overflow since `i < e ≤ max`
+    intro i _ hie
+    simp only []
+    have hmax : i.val + 1 ≤ 2147483647 := by have := e.hBounds; scalar_tac
+    have hb : (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize)).val = 1 := by
+      have h1 : UScalar.cast UScalarTy.U32 (1#usize) = 1#u32 := by
+        apply UScalar.eq_of_val_eq; simp
+      rw [h1]; simp only [UScalar.hcast, IScalar.val]; decide
+    have hwval :
+        (i.wrapping_add (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize))).val
+          = i.val + 1 := by
+      simp only [I32.wrapping_add_val_eq, hb]; apply i32_bmod_id <;> scalar_tac
+    have hge :
+        i ≤ i.wrapping_add (UScalar.hcast IScalarTy.I32 (UScalar.cast UScalarTy.U32 1#usize)) := by
+      scalar_tac
+    have h1gt : ¬ (1#usize > UScalar.cast UScalarTy.Usize core.num.U32.MAX) := by
+      have : (UScalar.cast UScalarTy.Usize core.num.U32.MAX).val = 4294967295 := by
+        simp [core.num.U32.MAX, U32.rMax]
+      scalar_tac
+    have h1lt : ¬ (1#usize < UScalar.cast UScalarTy.Usize core.num.U32.MIN) := by
+      have : (UScalar.cast UScalarTy.Usize core.num.U32.MIN).val = 0 := by simp [core.num.U32.MIN]
+      scalar_tac
+    unfold core.I32.Insts.CoreIterRangeStep.forward_checked
+    simp only [CoreModels.core.num.I32.wrapping_add, rust_primitives.arithmetic.wrapping_add_i32,
+      core.U32.Insts.CoreConvertTryFromUsizeTryFromIntError.try_from, Aeneas.Std.lift,
+      h1gt, h1lt, hge, bind_tc_ok, ↓reduceIte, if_true, if_false, ge_iff_le]
+    exact ⟨_, rfl, hwval⟩
 
 end Spec
 
