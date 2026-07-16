@@ -39,6 +39,220 @@ def forLoopWithInvariant {ι β : Type} (StepInst : core.iter.range.Step ι)
         let acc' ← body i x.2
         Result.ok (ControlFlow.cont (r, acc'))) (iter, init)
 
+/-! ## Spec lemmas for `forLoopWithInvariant`
+
+These let `hax_mvcgen` discharge `for i in s..e` loops after the
+`for_loop_with_invariant` tactic has rewritten them. Everything is generic over
+the loop index type `A` via a measure `v : A → ℤ` (instantiated with the scalar
+value embedded in `ℤ`), so it works uniformly for every integer type. The only
+type-specific facts are three hypotheses about the `Step A` dictionary
+(`clone`, `partial_cmp`, `forward_checked`), discharged once per integer type in
+the `@[spec]` instances at the end. -/
+
+section Spec
+open Result ControlFlow
+
+private abbrev ResultPS :=
+  PostShape.except Aeneas.Std.Error (PostShape.except PUnit PostShape.pure)
+
+private theorem triple_noThrow_elim {α} {x : Result α} {Q : α → Assertion ResultPS}
+    (h : ⦃ ⌜ True ⌝ ⦄ x ⦃ PostCond.noThrow Q ⦄) {v : α} (hv : x = ok v) :
+    (Q v).down := by
+  subst hv; simpa [Triple, WP.wp] using h
+
+private theorem triple_noThrow_exists_ok {α} {x : Result α} {Q : α → Assertion ResultPS}
+    (h : ⦃ ⌜ True ⌝ ⦄ x ⦃ PostCond.noThrow Q ⦄) : ∃ v, x = ok v := by
+  match x, h with
+  | .ok v, _ => exact ⟨v, rfl⟩
+  | .fail e, h => exact absurd h (by simp [Triple, WP.wp, PredTrans.apply])
+  | .div, h => exact absurd h (by simp [Triple, WP.wp, PredTrans.apply])
+
+private theorem triple_of_ok {α} {x : Result α} {v : α} {P : α → Prop}
+    (hx : x = ok v) (hp : P v) :
+    (⦃ ⌜ True ⌝ ⦄ x ⦃ ⇓ r => ⌜ P r ⌝ ⦄) := by
+  subst hx; simp [Triple, WP.wp, hp, PredTrans.apply]
+
+/-- The `loop` underlying a range for-loop, driven purely by the measure `v`.
+Generic over the index type `A`: the body is required to advance the measure by
+exactly `1` on each `cont` step, and the induction is on the number of remaining
+steps `(v e - v start).toNat`. -/
+theorem loop_range_spec {A β : Type} (v : A → ℤ)
+    (body : (core.ops.range.Range A × β) →
+      Result (ControlFlow (core.ops.range.Range A × β) β))
+    (init : β) (s e : A) (inv : A → β → Result Prop)
+    (h_le : v s ≤ v e)
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : A), v s ≤ v i → v i ≤ v e →
+      (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄
+      body ({ start := i, «end» := e }, acc)
+      ⦃ ⇓ r => match r with
+        | .cont (iter', acc') =>
+          ⌜ v i < v e ∧ iter'.«end» = e ∧ v iter'.start = v i + 1
+            ∧ (inv iter'.start acc').holds ⌝
+        | .done y => ⌜ (inv e y).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    loop body ({ start := s, «end» := e }, init)
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  suffices gen : ∀ (n : Nat) (acc : β) (start : A),
+    (v e - v start).toNat = n → v s ≤ v start → v start ≤ v e →
+    (inv start acc).holds →
+    ⦃ ⌜ True ⌝ ⦄ loop body ({ start := start, «end» := e }, acc)
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ by
+    exact gen _ init s rfl (le_refl _) h_le h_init
+  intro n
+  induction n with
+  | zero =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := triple_noThrow_exists_ok hs
+    have hpost := triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody]
+    match r with
+    | .cont (iter', acc') => simp at hpost; exact absurd hpost.1 (by omega)
+    | .done y => simp at hpost; exact triple_of_ok rfl hpost
+  | succ n ih =>
+    intro acc start hn hs_le hse_le hinv
+    have hs := h_step acc start hs_le hse_le hinv
+    obtain ⟨r, hbody⟩ := triple_noThrow_exists_ok hs
+    have hpost := triple_noThrow_elim hs hbody
+    rw [loop.eq_def, hbody]
+    match r with
+    | .done y => simp at hpost; exact triple_of_ok rfl hpost
+    | .cont (iter', acc') =>
+      simp at hpost
+      obtain ⟨hlt, hend, hstart, hinv'⟩ := hpost
+      have hiter : iter' = { start := iter'.start, «end» := e } := by
+        cases iter'; cases hend; rfl
+      rw [hiter]
+      exact ih acc' iter'.start
+        (by rw [hstart]; omega) (by rw [hstart]; omega) (by rw [hstart]; omega) hinv'
+
+/-- `Iterator::next` for a range `[i, e)`, characterised by the measure `v` and
+three facts about the `Step A` dictionary. -/
+theorem iteratorRange_next_spec {A : Type} (v : A → ℤ)
+    (St : core.iter.range.Step A) (i e : A) {Q}
+    (h_clone : St.cloneCloneInst.clone i = ok i)
+    (h_cmp : St.corecmpPartialOrdInst.partial_cmp i e
+      = ok (some (if v i < v e then core.cmp.Ordering.Less
+        else if v i = v e then core.cmp.Ordering.Equal else core.cmp.Ordering.Greater)))
+    (h_fwd : v i < v e →
+      ∃ i', St.forward_checked i 1#usize = ok (some i') ∧ v i' = v i + 1)
+    (h_lt : (h : v i < v e) →
+      ∀ (t : A), v t = v i + 1 →
+        (Q.1 (some i, { start := t, «end» := e })).down)
+    (h_ge : v i ≥ v e →
+      (Q.1 (none, { start := i, «end» := e })).down) :
+    ⦃ ⌜ True ⌝ ⦄
+    core.IteratorRange.next St { start := i, «end» := e }
+    ⦃ Q ⦄ := by
+  unfold core.IteratorRange.next
+  simp only [h_cmp]
+  by_cases h : v i < v e
+  · obtain ⟨i', hfw, hv'⟩ := h_fwd h
+    simp only [h, ↓reduceIte, bind_tc_ok, h_clone, hfw]
+    exact (by simpa [Triple, WP.wp, PredTrans.apply] using h_lt h i' hv')
+  · simp only [h, ↓reduceIte, bind_tc_ok]
+    split <;> exact (by simpa [Triple, WP.wp, PredTrans.apply] using h_ge (not_lt.mp h))
+
+/-- Spec for `forLoopWithInvariant`, generic over the index type `A`. The three
+`Step`-dictionary hypotheses (`h_clone`, `h_cmp`, `h_fwd`) are discharged once
+per integer type; the loop-carried invariant `inv` advances by one index per
+iteration. -/
+theorem forLoopWithInvariant_spec {A β : Type} (v : A → ℤ)
+    (St : core.iter.range.Step A)
+    (body : A → β → Result β) (init : β) (s e : A) (inv : A → β → Result Prop)
+    (h_le : v s ≤ v e)
+    (h_inj : ∀ x y : A, v x = v y → x = y)
+    (h_clone : ∀ i : A, St.cloneCloneInst.clone i = ok i)
+    (h_cmp : ∀ x y : A, St.corecmpPartialOrdInst.partial_cmp x y
+      = ok (some (if v x < v y then core.cmp.Ordering.Less
+        else if v x = v y then core.cmp.Ordering.Equal else core.cmp.Ordering.Greater)))
+    (h_fwd : ∀ i : A, v s ≤ v i → v i < v e →
+      ∃ i', St.forward_checked i 1#usize = ok (some i') ∧ v i' = v i + 1)
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : A), v s ≤ v i → v i < v e →
+      (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄
+      body i acc
+      ⦃ ⇓ r => ⌜ ∀ (i' : A), v i' = v i + 1 → (inv i' r).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    forLoopWithInvariant St inv body { start := s, «end» := e } init
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  unfold forLoopWithInvariant
+  apply loop_range_spec v _ init s e inv h_le h_init
+  intro acc i hsi hie hinv
+  simp only [core.ops.range.Range.Insts.CoreIterTraitsIteratorIterator.next,
+    core.IteratorRange.next, h_cmp i e]
+  by_cases h : v i < v e
+  · -- i < e: `next` yields the current index, `body` runs, the loop continues
+    obtain ⟨i', hfw, hv'⟩ := h_fwd i hsi h
+    have hbody := h_step acc i hsi h hinv
+    obtain ⟨r, hr⟩ := triple_noThrow_exists_ok hbody
+    have hh := (triple_noThrow_elim hbody hr) i' hv'
+    simp only [h, ↓reduceIte, h_clone, hfw, hr, bind_tc_ok]
+    simp [hr, hv', bind_tc_ok, Triple, WP.wp, PredTrans.apply]
+    simpa [Result.holds, Triple, WP.wp, PredTrans.apply] using hh
+  · -- i ≥ e: with `i ≤ e` and `v` injective this is `i = e`; the loop is done
+    have hie' : i = e := h_inj i e (le_antisymm hie (not_lt.mp h))
+    subst hie'
+    simp [bind_tc_ok, Triple, WP.wp, PredTrans.apply]
+    simpa [Result.holds, Triple, WP.wp, PredTrans.apply] using hinv
+
+/-! ### `@[spec]` instances per integer type
+
+Each instance instantiates `forLoopWithInvariant_spec` with the scalar value
+embedded in `ℤ` and discharges the four `Step`-dictionary facts. The invariant
+hypotheses are phrased over `(·.val : ℤ)` so a single form covers signed and
+unsigned uniformly. -/
+
+/-- `for i in s..e` over `usize`. -/
+@[spec]
+theorem forLoopWithInvariant_spec_usize {β : Type}
+    (body : Std.Usize → β → Result β) (init : β) (s e : Std.Usize)
+    (inv : Std.Usize → β → Result Prop)
+    (h_le : (s.val : ℤ) ≤ (e.val : ℤ))
+    (h_init : (inv s init).holds)
+    (h_step : ∀ acc (i : Std.Usize), (s.val : ℤ) ≤ (i.val : ℤ) → (i.val : ℤ) < (e.val : ℤ) →
+      (inv i acc).holds →
+      ⦃ ⌜ True ⌝ ⦄ body i acc
+      ⦃ ⇓ r => ⌜ ∀ i', (i'.val : ℤ) = (i.val : ℤ) + 1 → (inv i' r).holds ⌝ ⦄) :
+    ⦃ ⌜ True ⌝ ⦄
+    forLoopWithInvariant core.Usize.Insts.CoreIterRangeStep inv body
+      { start := s, «end» := e } init
+    ⦃ ⇓ r => ⌜ (inv e r).holds ⌝ ⦄ := by
+  refine forLoopWithInvariant_spec (fun x => (x.val : ℤ)) core.Usize.Insts.CoreIterRangeStep
+    body init s e inv h_le ?_ ?_ ?_ ?_ h_init h_step
+  · -- injectivity
+    intro x y hxy; simp only [] at hxy; apply UScalar.eq_of_val_eq; exact_mod_cast hxy
+  · -- clone
+    intro i; rfl
+  · -- partial_cmp
+    intro x y
+    show core.mkUPartialOrd.partial_cmp x y = _
+    have e1 : ((x.val : ℤ) < (y.val : ℤ)) = (x.val < y.val) := by simp
+    have e2 : ((x.val : ℤ) = (y.val : ℤ)) = (x.val = y.val) := by simp
+    simp only [core.mkUPartialOrd, compare, compareOfLessAndEq, e1, e2]
+    split_ifs <;> rfl
+  · -- forward_checked by 1: `checked_add`, no overflow since `i < e ≤ max`
+    intro i _ hie
+    simp only []
+    have hbnd : i.val + (1#usize).val ≤ Usize.max := by have := e.hBounds; scalar_tac
+    have hno := UScalar.overflowing_add_eq i 1#usize
+    have hle1 : ¬ (i.val + (1#usize).val > UScalar.max .Usize) := by scalar_tac
+    simp only [hle1, if_false] at hno
+    obtain ⟨hsv, hovf⟩ := hno
+    simp only [core.Usize.Insts.CoreIterRangeStep.forward_checked,
+      core.convert.TryFromUTInfallible.Blanket.try_from, core.convert.From.Blanket.from,
+      core.num.Usize.checked_add, core.num.Usize.overflowing_add,
+      rust_primitives.arithmetic.overflowing_add_usize, bind_tc_ok]
+    generalize hov : UScalar.overflowing_add i 1#usize = ov at *
+    obtain ⟨res, overflowed⟩ := ov
+    subst hovf
+    exact ⟨_, rfl, by exact_mod_cast hsv⟩
+
+end Spec
+
 /-! ## Body-extraction helpers (shared between the conv and regular tactics) -/
 
 /-- Substitute every occurrence of `x.2` in `e` by `aFvar`, recognizing both
